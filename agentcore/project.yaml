@@ -1,0 +1,489 @@
+# project.yaml - RepoIntegrator Quick Reference
+# Use this for quick understanding of the project structure
+
+project:
+  name: RepoIntegrator
+  version: 1.0.0-alpha
+  description: Automated GitHub repo integration using AI agents
+  status: in_development
+  
+  goal: Reduce repo integration time from hours to 10-15 minutes
+  
+  repository: https://github.com/your-username/repo-integrator
+  license: MIT
+  python_version: ">=3.10"
+
+# Core value proposition
+problem:
+  statement: "Developers find useful repos but integration is time-consuming"
+  pain_points:
+    - Understanding unfamiliar codebases
+    - Mapping dependencies
+    - Adapting to existing architecture
+    - Multi-file changes required
+    - Handling conflicts
+
+solution:
+  - Automatic repo analysis with AI
+  - Smart integration planning
+  - Automated code generation
+  - One-click application
+
+# Technology stack
+stack:
+  frontend:
+    framework: Reflex
+    language: Python
+    styling: Tailwind CSS (built-in)
+    state_management: Reflex State
+    
+  backend:
+    framework: FastAPI
+    async: true
+    http_client: httpx
+    git_operations: GitPython
+    
+  ai:
+    primary_provider: Lightning AI
+    free_tier: 20 calls/month
+    models:
+      - name: CodeLlama 34B
+        use_case: default, code integration
+        speed: medium
+        quality: high
+      - name: DeepSeek Coder 33B
+        use_case: complex refactoring
+        speed: medium
+        quality: very_high
+      - name: StarCoder2 15B
+        use_case: quick tasks
+        speed: fast
+        quality: good
+    
+    fallback:
+      - OpenAI GPT-4
+      - Anthropic Claude
+      
+  tools:
+    code_analysis:
+      - tree-sitter
+      - AST parsing
+    diff_generation: unidiff
+    caching: filesystem JSON
+    
+# File structure
+structure:
+  root:
+    - repo_integrator_ui.py      # Main Reflex UI
+    - requirements.txt
+    - .env
+    - .env.example
+    - quick_start.sh
+    - SPEC.md                     # Full specification
+    - AGENT.md                    # Guide for AI agents
+    - README.md
+    - project.yaml                # This file
+    
+  directories:
+    services:
+      - lightning_ai_service.py   # Lightning AI client
+      - repo_integrator_service.py # Core logic
+      - git_service.py            # Git operations (TODO)
+      
+    agents:
+      - repo_integrator_agent.py  # LangGraph agent (optional)
+      - code_analysis_agent.py    # Code analysis
+      
+    utils:
+      - code_parser.py            # AST/tree-sitter (TODO)
+      - diff_generator.py         # Diff creation (TODO)
+      - cache_manager.py          # Caching (TODO)
+      
+    api:
+      - main.py                   # FastAPI app
+      - routes.py                 # Endpoints
+      
+    tests:
+      - test_lightning_ai.py
+      - test_integration.py
+      - test_ui.py
+      
+    data:
+      - cache/                    # Cached analyses
+      - logs/                     # Application logs
+
+# Key workflows
+workflows:
+  analyze_repo:
+    steps:
+      - User inputs repo URL, target file, instructions
+      - Clone repo with GitPython
+      - Extract relevant files (max 10)
+      - Call Lightning AI for analysis
+      - Parse response into structured plan
+      - Display to user with confidence scores
+    duration: "<60 seconds"
+    quota_cost: 1 call
+    
+  apply_changes:
+    steps:
+      - User selects files to modify
+      - For each file load original content
+      - Call Lightning AI for code generation
+      - Generate diff
+      - Backup original
+      - Apply changes atomically
+      - Verify and notify
+    duration: "~10 seconds per file"
+    quota_cost: "1 call per file"
+
+# API endpoints
+api:
+  base_url: http://localhost:8000/api/v1
+  
+  endpoints:
+    - path: /analyze-repo
+      method: POST
+      purpose: Analyze GitHub repository
+      request:
+        repo_url: string (required)
+        target_file: string (optional)
+        instructions: string (optional)
+        model: string (default: CODE_LLAMA_34B)
+      response:
+        success: boolean
+        data:
+          main_file: string
+          affected_files: array
+          dependencies: array
+          risks: array
+          estimated_time: string
+        quota_remaining: integer
+        
+    - path: /apply-changes
+      method: POST
+      purpose: Apply code changes
+      request:
+        files: array (required)
+        dry_run: boolean (default: true)
+      response:
+        success: boolean
+        results: array
+
+# Environment variables
+environment:
+  required:
+    - LIGHTNING_API_KEY          # From lightning.ai
+    
+  optional:
+    - LIGHTNING_STUDIO_URL       # Default: https://api.lightning.ai
+    - GITHUB_TOKEN               # For private repos
+    - OPENAI_API_KEY             # Fallback
+    - ANTHROPIC_API_KEY          # Fallback
+    - DEBUG                      # Default: True
+    - LOG_LEVEL                  # Default: INFO
+    - CACHE_TTL                  # Default: 86400 (24h)
+
+# Development phases
+phases:
+  mvp:
+    duration: 1-2 weeks
+    tasks:
+      - ✅ Setup project structure
+      - ✅ Lightning AI integration
+      - ✅ Basic Reflex UI
+      - ✅ Git clone functionality
+      - ✅ Simple analysis prompt
+      - ✅ Display results
+      - ⏳ Manual testing with 3 repos
+      
+  core_features:
+    duration: 3-4 weeks
+    tasks:
+      - ⏳ File selection UI
+      - ⏳ Code modification logic
+      - ⏳ Diff generation
+      - ⏳ Backup mechanism
+      - ⏳ Error handling
+      - ⏳ Progress indicators
+      - ⏳ Quota management
+      
+  polish:
+    duration: 5-6 weeks
+    tasks:
+      - ⏳ Caching layer
+      - ⏳ Multiple model support
+      - ⏳ Better prompts
+      - ⏳ UI improvements
+      - ⏳ Documentation
+      - ⏳ Unit tests
+      - ⏳ Integration tests
+      
+  advanced:
+    duration: future
+    tasks:
+      - ⏳ Git integration (branches/PRs)
+      - ⏳ VSCode extension
+      - ⏳ CLI tool
+      - ⏳ Collaborative features
+      - ⏳ Analytics dashboard
+
+# Code patterns to follow
+patterns:
+  lightning_ai_call:
+    correct: |
+      from services.lightning_ai_service import LightningAIClient
+      
+      async def my_function():
+          client = LightningAIClient()
+          try:
+              response = await client.generate(...)
+              return response.text
+          finally:
+              await client.close()
+    
+    incorrect: |
+      import httpx
+      response = httpx.post("https://lightning.ai/...")
+      
+  reflex_state:
+    correct: |
+      class State(rx.State):
+          field: str = ""
+          
+          async def handler(self):
+              self.is_loading = True
+              try:
+                  # work
+                  yield  # Update UI
+              finally:
+                  self.is_loading = False
+                  
+    incorrect: |
+      global_state = {}  # Don't use globals
+      
+  error_handling:
+    correct: |
+      try:
+          result = await risky_operation()
+      except SpecificError as e:
+          logger.error(f"Failed: {e}")
+          self.error_message = "User-friendly message"
+          return None
+          
+    incorrect: |
+      result = await risky_operation()  # No error handling
+
+# Common commands
+commands:
+  setup:
+    - bash: ./quick_start.sh
+      description: Automated setup
+      
+    - bash: pip install -r requirements.txt
+      description: Manual install dependencies
+      
+  run:
+    - bash: reflex run repo_integrator_ui.py
+      description: Start Reflex UI (frontend + backend)
+      port: 3000
+      
+    - bash: uvicorn api.main:app --reload
+      description: Start FastAPI only
+      port: 8000
+      
+  test:
+    - bash: pytest tests/
+      description: Run all tests
+      
+    - bash: pytest tests/test_lightning_ai.py -v
+      description: Test Lightning AI integration
+      
+  format:
+    - bash: black *.py services/ agents/
+      description: Format code
+      
+    - bash: ruff check .
+      description: Lint code
+
+# Success metrics
+metrics:
+  mvp:
+    - metric: Successful analyses
+      target: 5 different repos
+      
+    - metric: Average analysis time
+      target: <60 seconds
+      
+    - metric: File identification accuracy
+      target: ">80%"
+      
+    - metric: System stability
+      target: 0 crashes during demo
+      
+  production:
+    - metric: Average integration time
+      target: <15 minutes
+      
+    - metric: User satisfaction
+      target: ">4/5"
+      
+    - metric: Integration success rate
+      target: ">90%"
+      
+    - metric: Quota efficiency
+      target: <3 calls per integration
+
+# Critical constraints
+constraints:
+  lightning_ai:
+    free_quota: 20 calls/month
+    max_tokens: 8192 per call
+    timeout: 300 seconds
+    
+  file_system:
+    max_file_size: 1 MB
+    max_files_analyzed: 10
+    cache_ttl: 24 hours
+    
+  security:
+    no_code_execution: true
+    sandbox_file_ops: true
+    validate_all_inputs: true
+    
+# Testing strategy
+testing:
+  unit:
+    framework: pytest
+    coverage_target: 80%
+    focus:
+      - Lightning AI client
+      - Cache manager
+      - Code parser
+      - Diff generator
+      
+  integration:
+    scenarios:
+      - Clone public repo
+      - Analyze small repo (<10 files)
+      - Analyze large repo (>100 files)
+      - Apply changes to single file
+      - Apply changes to multiple files
+      - Handle invalid URLs
+      - Handle quota exceeded
+      - Cache hit/miss
+      
+  manual:
+    repos_to_test:
+      - https://github.com/microsoft/LLMLingua
+      - https://github.com/ggerganov/llama.cpp
+      - https://github.com/huggingface/transformers
+      
+# Documentation
+documentation:
+  for_users:
+    - README.md                   # Getting started
+    - Lightning_Setup_Guide.md    # Lightning AI setup
+    
+  for_developers:
+    - SPEC.md                     # Full specification
+    - AGENT.md                    # AI agent guide
+    - project.yaml                # This file
+    
+  inline:
+    - Docstrings in all functions
+    - Type hints everywhere
+    - Comments for complex logic
+
+# Resources
+resources:
+  documentation:
+    lightning_ai: https://lightning.ai/docs
+    reflex: https://reflex.dev/docs
+    fastapi: https://fastapi.tiangolo.com
+    langraph: https://python.langchain.com/docs/langgraph
+    
+  templates:
+    base_template: https://github.com/neural-maze/agent-api-cookiecutter
+    
+  community:
+    discord: TBD
+    github_discussions: TBD
+
+# Quick troubleshooting
+troubleshooting:
+  lightning_api_error:
+    symptoms:
+      - "API key invalid"
+      - "Connection refused"
+    solutions:
+      - Check LIGHTNING_API_KEY in .env
+      - Verify key format (starts with la-)
+      - Check if .env is loaded
+      
+  reflex_not_updating:
+    symptoms:
+      - State changes but UI doesn't update
+    solutions:
+      - Add yield after state changes in async functions
+      - Check if using correct State class
+      
+  quota_exceeded:
+    symptoms:
+      - "Monthly quota exceeded"
+    solutions:
+      - Check cache is working
+      - Use fallback model
+      - Wait for monthly reset
+      - Upgrade Lightning AI plan
+      
+  import_errors:
+    symptoms:
+      - ModuleNotFoundError
+    solutions:
+      - pip install -r requirements.txt
+      - Check Python version (3.10+)
+      - Activate virtual environment
+
+# Priority order for implementation
+priorities:
+  now:
+    - Implement git_service.py
+    - Improve code parsing
+    - Add basic tests
+    - Test with real repos
+    
+  next:
+    - Better diff visualization
+    - Improved prompts
+    - Error recovery
+    - Documentation
+    
+  later:
+    - VSCode extension
+    - CLI tool
+    - Multi-repo support
+    - Collaborative features
+
+# Notes for AI agents
+ai_agent_notes:
+  when_helping:
+    - Always check SPEC.md first
+    - Follow existing patterns
+    - Don't waste Lightning AI quota
+    - Add type hints and docstrings
+    - Use async/await for I/O
+    - Handle errors gracefully
+    
+  never_do:
+    - Hardcode API keys
+    - Skip quota checks
+    - Use exec() or eval()
+    - Write outside project dir
+    - Create global state
+    - Mix sync/async incorrectly
+    
+  references:
+    full_spec: /SPEC.md
+    agent_guide: /AGENT.md
+    example_code: /services/lightning_ai_service.py
