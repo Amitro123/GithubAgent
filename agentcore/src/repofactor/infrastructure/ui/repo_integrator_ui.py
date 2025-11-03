@@ -1,1124 +1,764 @@
 # repo_integrator_ui.py
-
 """
-
-RepoIntegrator UI built with Reflex
-
-Integrated with Lightning AI for model inference
-
+RepoIntegrator - Modern Dark UI with Reflex
+Beautiful, professional interface for GitHub repo integration
 """
-
-
 
 import reflex as rx
-
 from typing import Optional, List
 
-import asyncio
+# ============================================================================
+# State Management
+# ============================================================================
 
-import re
-
-
-
-from repofactor.domain.models import FileAnalysis, AnalysisResult
-
-
-
-
-
-class State(rx.State):
-
-    # Form inputs
-
-    repo_url: str = ""
-
-    target_file: str = ""
-
+class RepoIntegratorState(rx.State):
+    """Application state"""
+    
+    # Search & Selection
+    repo_search: str = ""
+    selected_repo: Optional[dict] = None
+    search_results: List[dict] = []
+    is_searching: bool = False
+    
+    # User Input
     instructions: str = ""
-
-    selected_model: str = "CODE_LLAMA_34B" # TODO: Add more models and not hard coded!
-
-   
-
-    # Process state
-
-    stage: str = "input"
-
+    
+    # Process State
+    stage: str = "input"  # input, analyzing, results
     progress: int = 0
-
     current_step: str = ""
-
-   
-
-    # Analysis results
-
-    analysis: Optional[AnalysisResult] = None
-
-    selected_files: List[str] = []
-
-   
-
-    # Lightning AI specific
-
-    remaining_quota: int = 20
-
-    model_info: str = "CodeLlama 34B - Best for code integration"
-
-   
-
-    # UI state
-
+    
+    # GitHub Connection
+    github_connected: bool = False
+    github_username: str = ""
+    
+    # Quota
+    quota_remaining: int = 20
+    quota_total: int = 20
+    
+    # Results
+    affected_files: List[dict] = []
+    
+    # UI State
     is_loading: bool = False
-
     error_message: str = ""
-
-    success_message: str = ""
-
-
-
-    def set_repo_url(self, value: str):
-
-        self.repo_url = value.strip()
-
-        self.error_message = ""
-
-        if value and not re.match(r'^https:\/\/github\.com\/[\w\-]+\/[\w\-]+$', value.strip()):
-
-            self.error_message = "Please enter a valid GitHub repo URL (e.g. https://github.com/owner/repo)"
-
-
-
-       
-
-    def set_target_file(self, value: str):
-
-        self.target_file = value
-
-       
-
-    def set_instructions(self, value: str):
-
-        self.instructions = value
-
-   
-
-    def set_model(self, value: str):
-
-        self.selected_model = value
-
-       
-
-        # Update model info TODO: Add more models and not hard coded!
-
-        model_descriptions = {
-
-            "CODE_LLAMA_34B": "CodeLlama 34B - Best for code integration",
-
-            "DEEPSEEK_CODER_33B": "DeepSeek Coder 33B - Excellent for refactoring",
-
-            "STARCODER2_15B": "StarCoder2 15B - Fast and efficient",
-
-            "LLAMA_3_70B": "Llama 3 70B - General purpose, very capable",
-
-            "MIXTRAL_8X7B": "Mixtral 8x7B - Fast inference"
-
-        }
-
-        self.model_info = model_descriptions.get(value, "Advanced model")
-
-
-
-    async def analyze_repo(self):
-
-        """Main analysis workflow using Lightning AI"""
-
-        if not self.repo_url:
-
-            self.error_message = "Please enter a repository URL"
-
-            return
-
-           
-
-        self.is_loading = True
-
-        self.stage = "analyzing"
-
-        self.error_message = ""
-
-        self.progress = 0
-
-       
-
-        try:
-
-            # Step 1: Clone repo
-
-            self.current_step = "cloning repository from github..."
-
-            self.progress = 15
-
-            yield
-
-            await asyncio.sleep(0.5)
-
-           
-
-            # Step 2: Extract key files
-
-            self.current_step = "extracting relevant files..."
-
-            self.progress = 30
-
-            yield
-
-            await asyncio.sleep(0.5)
-
-           
-
-            # Step 3: Call Lightning AI for analysis
-
-            self.current_step = f"analyzing with {self.model_info}..."
-
-            self.progress = 50
-
-            yield
-
-           
-
-            # Import Lightning AI service
-
-            from repofactor.application.services.lightning_ai_service import analyze_repo_with_lightning
-
-           
-
-            result = await analyze_repo_with_lightning(
-
-                repo_url=self.repo_url,
-
-                target_file=self.target_file,
-
-                instructions=self.instructions
-
-            )
-
-           
-
-            self.progress = 75
-
-            self.current_step = "analyzing results..."
-
-            yield
-
-            await asyncio.sleep(0.3)
-
-           
-
-            # Format results
-
-            self.analysis = AnalysisResult( # TODO: remove string fields
-
-                main_file=result.get("main_file", "src/main.py"),
-
-                affected_files=[
-
-                    FileAnalysis(**f) if isinstance(f, dict) else FileAnalysis(
-
-                        path=f.get("path", ""),
-
-                        reason=f.get("reason", ""),
-
-                        confidence=f.get("confidence", 70),
-
-                        status="done"
-
-                    )
-
-                    for f in result.get("affected_files", [])
-
-                ],
-
-                dependencies=result.get("dependencies", []),
-
-                estimated_changes=result.get("estimated_changes", "basic changes"),
-
-                risks=result.get("risks", [])
-
-            )
-
-           
-
-            self.selected_files = [f.path for f in self.analysis.affected_files]
-
-            self.progress = 100
-
-            self.current_step = "completed"
-
-           
-
-            # Update quota (mock - in production get from API)
-
-            self.remaining_quota -= 1
-
-           
-
-            await asyncio.sleep(0.3)
-
-            self.stage = "reviewing"
-
-           
-
-        except Exception as e:
-
-            self.error_message = f"error: {str(e)}"
-
-            self.stage = "input"
-
-        finally:
-
-            self.is_loading = False
-
-
-
-    def toggle_file_selection(self, file_path: str):
-
-        if file_path in self.selected_files:
-
-            self.selected_files.remove(file_path)
-
+    show_advanced: bool = False
+
+    def set_repo_search(self, value: str):
+        """Handle repo search input"""
+        self.repo_search = value
+        
+        if len(value) > 2:
+            self.search_repos(value)
         else:
-
-            self.selected_files.append(file_path)
-
-
-
-    async def apply_changes(self):
-
-        """Apply the changes using Lightning AI for code generation"""
-
-        self.is_loading = True
-
-        self.stage = "applying"
-
-        self.progress = 0
-
-       
-
-        try:
-
-            from repofactor.application.services.lightning_ai_service import CodeAnalysisAgent
-
-           
-
-            agent = CodeAnalysisAgent()
-
-           
-
-            for i, file_path in enumerate(self.selected_files):
-
-                self.current_step = f"updating {file_path} with Lightning AI..."
-
-                self.progress = int((i + 1) / len(self.selected_files) * 100)
-
-                yield
-
-               
-
-                # Generate code changes
-
-                # In production: load original code, generate changes, apply
-
-                await asyncio.sleep(0.5)
-
-           
-
-            await agent.close()
-
-           
-
-            self.stage = "done"
-
-            self.success_message = f"updated {len(self.selected_files)} files!"
-
-            self.remaining_quota -= len(self.selected_files)
-
-           
-
-        except Exception as e:
-
-            self.error_message = f"error: {str(e)}"
-
-            self.stage = "reviewing"
-
-        finally:
-
-            self.is_loading = False
-
-
-
-    def reset_form(self):
-
-        """Reset the form to initial state."""
-
-        self.stage = "input"
-
-        self.repo_url = ""
-
-        self.target_file = ""
-
-        self.instructions = ""
-
-        self.analysis = None
-
-        self.selected_files = []
-
-        self.progress = 0
-
-        self.current_step = ""
-
+            self.search_results = []
+    
+    def search_repos(self, query: str):
+        """Search GitHub repos (mock for demo)"""
+        self.is_searching = True
+        
+        # Mock results - in production, call GitHub API
+        self.search_results = [
+            {
+                "full_name": "microsoft/LLMLingua",
+                "description": "Compress prompts for LLMs with minimal performance loss",
+                "stars": 2100,
+                "language": "Python",
+                "updated": "2 days ago"
+            },
+            {
+                "full_name": "openai/whisper",
+                "description": "Robust Speech Recognition",
+                "stars": 45000,
+                "language": "Python",
+                "updated": "1 week ago"
+            }
+        ]
+        
+        self.is_searching = False
+    
+    def select_repo(self, repo: dict):
+        """Select a repository"""
+        self.selected_repo = repo
+        self.repo_search = ""
+        self.search_results = []
         self.error_message = ""
-
-        self.success_message = ""
-
-
-
-
-
-def quota_badge() -> rx.Component:
-
-    """Show remaining Lightning AI quota"""
-
-    return rx.badge(
-
-        rx.hstack(
-
-            rx.icon("zap", size=14),
-
-            rx.text(f"{State.remaining_quota}/20 calls remaining this month"), # TODO: get from API and remmber change in prod!
-
-            spacing="1"
-
-        ),
-
-        color_scheme=rx.cond(State.remaining_quota < 5, "orange", "green"),
-
-        variant="soft"
-
-    )
-
-
-
-
-
-def model_selector() -> rx.Component:
-
-    """Model selection dropdown"""
-
-    return rx.vstack(
-
-        rx.hstack(
-
-            rx.icon("cpu", size=16),
-
-            rx.text("select model", font_weight="medium"),
-
-            spacing="2"
-
-        ),
-
-        rx.select( # TODO: change to strings file!
-
-            ["CODE_LLAMA_34B", "DEEPSEEK_CODER_33B", "STARCODER2_15B",
-
-             "LLAMA_3_70B", "MIXTRAL_8X7B"],
-
-            value=State.selected_model,
-
-            on_change=State.set_model,
-
-            size="3"
-
-        ),
-
-        rx.text(State.model_info, font_size="sm", color="gray.500"),
-
-        align="start",
-
-        spacing="2",
-
-        width="100%"
-
-    )
+    
+    def clear_repo_selection(self):
+        """Clear selected repo"""
+        self.selected_repo = None
+    
+    def set_instructions(self, value: str):
+        """Update instructions"""
+        self.instructions = value
+    
+    def toggle_advanced(self):
+        """Toggle advanced options"""
+        self.show_advanced = not self.show_advanced
+    
+    def connect_github(self):
+        """Mock GitHub connection"""
+        self.github_connected = True
+        self.github_username = "user"
+    
+    def disconnect_github(self):
+        """Disconnect GitHub"""
+        self.github_connected = False
+        self.github_username = ""
+    
+    async def analyze_repo(self):
+        """Start analysis"""
+        if not self.selected_repo or not self.instructions.strip():
+            self.error_message = "Please select a repo and provide instructions"
+            return
+        
+        if self.quota_remaining <= 0:
+            self.error_message = "Quota exceeded. Please upgrade or wait for monthly reset."
+            return
+        
+        self.is_loading = True
+        self.stage = "analyzing"
+        self.error_message = ""
+        
+        # Simulate analysis steps
+        steps = [
+            "Cloning repository...",
+            "Analyzing code structure...",
+            "Building dependency graph...",
+            "Generating integration plan..."
+        ]
+        
+        for i, step in enumerate(steps):
+            self.current_step = step
+            self.progress = int((i + 1) / len(steps) * 100)
+            yield
+            # In production: await asyncio.sleep(0.5)
+        
+        # Mock results
+        self.affected_files = [
+            {"path": "src/compression.py", "confidence": 95, "reason": "Main integration point"},
+            {"path": "src/utils/tokenizer.py", "confidence": 87, "reason": "Uses compression functions"},
+            {"path": "requirements.txt", "confidence": 100, "reason": "Add dependencies"},
+        ]
+        
+        self.quota_remaining -= 1
+        self.stage = "results"
+        self.is_loading = False
+    
+    def reset_form(self):
+        """Reset to initial state"""
+        self.stage = "input"
+        self.selected_repo = None
+        self.instructions = ""
+        self.error_message = ""
+        self.affected_files = []
 
 
+# ============================================================================
+# Custom Theme & Styling
+# ============================================================================
+
+# Color palette
+COLORS = {
+    "bg_primary": "#0a0a0f",
+    "bg_secondary": "#1a1a2e",
+    "bg_card": "#16213e",
+    "purple_500": "#8b5cf6",
+    "purple_600": "#7c3aed",
+    "pink_500": "#ec4899",
+    "pink_600": "#db2777",
+    "text_primary": "#f1f5f9",
+    "text_secondary": "#94a3b8",
+    "text_muted": "#64748b",
+    "border": "#2d3748",
+    "success": "#10b981",
+    "warning": "#f59e0b",
+    "error": "#ef4444",
+}
+
+# Common styles
+CARD_STYLE = {
+    "background": COLORS["bg_card"],
+    "border_radius": "16px",
+    "padding": "24px",
+    "border": f"1px solid {COLORS['border']}",
+}
+
+INPUT_STYLE = {
+    "background": COLORS["bg_secondary"],
+    "border": f"1px solid {COLORS['border']}",
+    "border_radius": "12px",
+    "padding": "12px 16px",
+    "color": COLORS["text_primary"],
+    "width": "100%",
+    "_focus": {
+        "outline": "none",
+        "border_color": COLORS["purple_500"],
+        "box_shadow": f"0 0 0 3px rgba(139, 92, 246, 0.1)"
+    }
+}
+
+BUTTON_PRIMARY_STYLE = {
+    "background": f"linear-gradient(135deg, {COLORS['purple_600']}, {COLORS['pink_600']})",
+    "color": "white",
+    "border_radius": "12px",
+    "padding": "12px 24px",
+    "font_weight": "600",
+    "border": "none",
+    "cursor": "pointer",
+    "transition": "all 0.2s",
+    "_hover": {
+        "transform": "translateY(-2px)",
+        "box_shadow": "0 10px 25px rgba(139, 92, 246, 0.3)"
+    }
+}
 
 
+# ============================================================================
+# UI Components
+# ============================================================================
 
-def confidence_badge(confidence: int) -> rx.Component:
-
-    """Display confidence badge with color based on confidence level."""
-
-    return rx.badge(
-
-        f"{confidence}%",
-
-        color_scheme=rx.cond(
-
-            confidence > 80,
-
-            "green",
-
-            rx.cond(confidence > 60, "yellow", "orange")
-
-        ),
-
-        variant="solid"
-
-    )
-
-
-
-
-
-def file_card(file: FileAnalysis, is_selected: bool) -> rx.Component:
-
+def header() -> rx.Component:
+    """Top header with branding and quota"""
     return rx.box(
-
         rx.hstack(
-
-            rx.checkbox(
-
-                checked=is_selected,
-
-                on_change=lambda _: State.toggle_file_selection(file.path),
-
-                color_scheme="purple"
-
-            ),
-
-            rx.vstack(
-
-                rx.hstack(
-
-                    rx.icon("file-code", size=16, color="purple"),
-
-                    rx.code(file.path, font_size="sm"),
-
-                    align="center",
-
-                    spacing="2"
-
+            # Logo and title
+            rx.hstack(
+                rx.box(
+                    "⚡",
+                    font_size="32px",
+                    background=f"linear-gradient(135deg, {COLORS['purple_500']}, {COLORS['pink_500']})",
+                    border_radius="12px",
+                    padding="8px",
+                    width="48px",
+                    height="48px",
+                    display="flex",
+                    align_items="center",
+                    justify_content="center",
                 ),
-
-                rx.text(file.reason, font_size="sm", color="gray.500"),
-
-                align="start",
-
-                spacing="1",
-
-                flex="1"
-
+                rx.vstack(
+                    rx.heading(
+                        "RepoIntegrator",
+                        size="7",
+                        background=f"linear-gradient(135deg, {COLORS['purple_500']}, {COLORS['pink_500']})",
+                        background_clip="text",
+                        color="transparent",
+                        margin="0",
+                    ),
+                    rx.text(
+                        "Powered by Lightning AI",
+                        font_size="12px",
+                        color=COLORS["text_muted"],
+                        margin="0",
+                    ),
+                    spacing="0",
+                    align_items="start",
+                ),
+                spacing="3",
             ),
-
-            confidence_badge(file.confidence),
-
-            align="center",
-
-            spacing="4",
-
-            width="100%"
-
+            
+            # Quota badge
+            rx.hstack(
+                rx.box(
+                    rx.hstack(
+                        rx.text("⚡", font_size="16px"),
+                        rx.text(
+                            f"{RepoIntegratorState.quota_remaining}/{RepoIntegratorState.quota_total}",
+                            font_weight="600",
+                            font_size="14px",
+                        ),
+                        rx.text("this month", font_size="12px", color=COLORS["text_muted"]),
+                        spacing="2",
+                    ),
+                    background=f"{COLORS['purple_600']}20",
+                    border=f"1px solid {COLORS['purple_600']}50",
+                    border_radius="10px",
+                    padding="8px 16px",
+                ),
+                spacing="4",
+            ),
+            
+            justify="between",
+            width="100%",
         ),
-
-        border="1px solid",
-
-        border_color="gray.200",
-
-        border_radius="lg",
-
-        padding="4",
-
-        bg="white",
-
-        _hover={"border_color": "purple.300", "shadow": "sm"},
-
-        transition="all 0.2s"
-
+        background=f"{COLORS['bg_primary']}cc",
+        backdrop_filter="blur(10px)",
+        border_bottom=f"1px solid {COLORS['border']}",
+        padding="16px 32px",
+        position="sticky",
+        top="0",
+        z_index="100",
     )
 
 
+def hero_section() -> rx.Component:
+    """Hero section with title and description"""
+    return rx.vstack(
+        rx.heading(
+            rx.text(
+                "Smart Integration",
+                background=f"linear-gradient(135deg, {COLORS['purple_500']}, {COLORS['pink_500']})",
+                background_clip="text",
+                color="transparent",
+            ),
+            size="9",
+            text_align="center",
+            margin_bottom="8px",
+        ),
+        rx.heading(
+            "of GitHub Repos",
+            size="9",
+            color=COLORS["text_secondary"],
+            text_align="center",
+            margin_bottom="16px",
+        ),
+        rx.text(
+            "AI-powered code integration running on GPU in the cloud. Find a repo, describe what you need, and let AI do the work.",
+            color=COLORS["text_secondary"],
+            font_size="18px",
+            text_align="center",
+            max_width="700px",
+        ),
+        spacing="2",
+        align_items="center",
+        padding="48px 0",
+    )
 
+
+def github_connect_card() -> rx.Component:
+    """GitHub connection card"""
+    return rx.box(
+        rx.hstack(
+            rx.box(
+                "🔗",
+                font_size="32px",
+                background=f"linear-gradient(135deg, {COLORS['purple_500']}, {COLORS['pink_500']})",
+                border_radius="12px",
+                padding="12px",
+                width="48px",
+                height="48px",
+                display="flex",
+                align_items="center",
+                justify_content="center",
+            ),
+            rx.vstack(
+                rx.heading("Connect Your GitHub", size="5", margin="0"),
+                rx.text(
+                    "Access your private repos and push changes directly",
+                    color=COLORS["text_secondary"],
+                    font_size="14px",
+                    margin="0",
+                ),
+                rx.cond(
+                    RepoIntegratorState.github_connected,
+                    rx.hstack(
+                        rx.box(
+                            rx.hstack(
+                                rx.text("✓", color=COLORS["success"]),
+                                rx.text(
+                                    f"Connected as @{RepoIntegratorState.github_username}",
+                                    font_size="14px",
+                                ),
+                                spacing="2",
+                            ),
+                            background=f"{COLORS['success']}20",
+                            border=f"1px solid {COLORS['success']}50",
+                            border_radius="8px",
+                            padding="8px 12px",
+                        ),
+                        rx.button(
+                            "Disconnect",
+                            on_click=RepoIntegratorState.disconnect_github,
+                            size="2",
+                            variant="ghost",
+                            color_scheme="gray",
+                        ),
+                        spacing="3",
+                    ),
+                    rx.button(
+                        "Connect GitHub",
+                        on_click=RepoIntegratorState.connect_github,
+                        style=BUTTON_PRIMARY_STYLE,
+                        size="2",
+                    ),
+                ),
+                spacing="3",
+                align_items="start",
+            ),
+            spacing="4",
+            align_items="start",
+        ),
+        border_radius="16px",
+        padding="24px",
+        background=f"linear-gradient(135deg, {COLORS['purple_600']}10, {COLORS['pink_600']}10)",
+        border=f"1px solid {COLORS['purple_600']}30",
+    )
+
+
+def repo_search_input() -> rx.Component:
+    """Repository search with autocomplete"""
+    return rx.vstack(
+        rx.hstack(
+            rx.text("🔍", font_size="20px"),
+            rx.heading("Find a Repository", size="5"),
+            spacing="2",
+        ),
+        
+        # Search input
+        rx.box(
+            rx.input(
+                placeholder="Search for repos... (e.g., microsoft/LLMLingua)",
+                value=rx.cond(
+                    RepoIntegratorState.selected_repo,
+                    RepoIntegratorState.selected_repo["full_name"],
+                    RepoIntegratorState.repo_search,
+                ),
+                on_change=RepoIntegratorState.set_repo_search,
+                disabled=RepoIntegratorState.selected_repo != None,
+                style=INPUT_STYLE,
+            ),
+            rx.cond(
+                RepoIntegratorState.selected_repo,
+                rx.button(
+                    "✕",
+                    on_click=RepoIntegratorState.clear_repo_selection,
+                    position="absolute",
+                    right="12px",
+                    top="50%",
+                    transform="translateY(-50%)",
+                    background="transparent",
+                    border="none",
+                    cursor="pointer",
+                    color=COLORS["text_muted"],
+                    _hover={"color": COLORS["text_primary"]},
+                ),
+            ),
+            position="relative",
+            width="100%",
+        ),
+        
+        # Search results dropdown
+        rx.cond(
+            (RepoIntegratorState.search_results.length() > 0) & (RepoIntegratorState.selected_repo == None),
+            rx.box(
+                rx.foreach(
+                    RepoIntegratorState.search_results,
+                    lambda repo: rx.box(
+                        rx.vstack(
+                            rx.hstack(
+                                rx.text("📦", font_size="16px"),
+                                rx.text(repo["full_name"], font_weight="600"),
+                                spacing="2",
+                            ),
+                            rx.text(
+                                repo["description"],
+                                color=COLORS["text_secondary"],
+                                font_size="14px",
+                            ),
+                            rx.hstack(
+                                rx.text(f"⭐ {repo['stars']}", font_size="12px", color=COLORS["text_muted"]),
+                                rx.text(f"• {repo['language']}", font_size="12px", color=COLORS["text_muted"]),
+                                rx.text(f"• Updated {repo['updated']}", font_size="12px", color=COLORS["text_muted"]),
+                                spacing="2",
+                            ),
+                            spacing="2",
+                            align_items="start",
+                        ),
+                        on_click=lambda: RepoIntegratorState.select_repo(repo),
+                        padding="16px",
+                        cursor="pointer",
+                        border_bottom=f"1px solid {COLORS['border']}",
+                        _hover={"background": f"{COLORS['bg_secondary']}"},
+                        transition="background 0.2s",
+                    ),
+                ),
+                background=COLORS["bg_secondary"],
+                border=f"1px solid {COLORS['border']}",
+                border_radius="12px",
+                margin_top="8px",
+                max_height="300px",
+                overflow_y="auto",
+            ),
+        ),
+        
+        # Selected repo display
+        rx.cond(
+            RepoIntegratorState.selected_repo,
+            rx.box(
+                rx.hstack(
+                    rx.box(
+                        "✓",
+                        background=f"linear-gradient(135deg, {COLORS['purple_500']}, {COLORS['pink_500']})",
+                        border_radius="8px",
+                        padding="8px",
+                        width="32px",
+                        height="32px",
+                        display="flex",
+                        align_items="center",
+                        justify_content="center",
+                        font_size="16px",
+                    ),
+                    rx.vstack(
+                        rx.text(
+                            RepoIntegratorState.selected_repo["full_name"],
+                            font_weight="600",
+                        ),
+                        rx.text(
+                            RepoIntegratorState.selected_repo["description"],
+                            color=COLORS["text_secondary"],
+                            font_size="14px",
+                        ),
+                        spacing="1",
+                        align_items="start",
+                    ),
+                    spacing="3",
+                    align_items="start",
+                ),
+                border_radius="16px",
+                padding="24px",
+                background=f"linear-gradient(135deg, {COLORS['purple_600']}10, {COLORS['pink_600']}10)",
+                border=f"1px solid {COLORS['purple_600']}30",
+                margin_top="16px",
+            ),
+        ),
+        
+        spacing="4",
+        width="100%",
+        align_items="start",
+    )
+
+
+def instructions_input() -> rx.Component:
+    """Instructions textarea"""
+    return rx.vstack(
+        rx.hstack(
+            rx.text("✨", font_size="20px"),
+            rx.heading("What would you like to integrate?", size="5"),
+            spacing="2",
+        ),
+        rx.text_area(
+            placeholder="Describe what you want to do... For example:\n\n'Integrate the compression algorithm from LLMLingua into my project. Make it async and add proper error handling.'",
+            value=RepoIntegratorState.instructions,
+            on_change=RepoIntegratorState.set_instructions,
+            rows="6",
+            style={
+                **INPUT_STYLE,
+                "resize": "none",
+                "font_family": "inherit",
+            },
+        ),
+        rx.hstack(
+            rx.text("Be specific about what features you need", font_size="12px", color=COLORS["text_muted"]),
+            rx.text(f"{RepoIntegratorState.instructions.length()} characters", font_size="12px", color=COLORS["text_muted"]),
+            justify="between",
+            width="100%",
+        ),
+        spacing="3",
+        width="100%",
+        align_items="start",
+    )
+
+
+def analyze_button() -> rx.Component:
+    """Main analyze button with smart messaging"""
+    return rx.button(
+        rx.cond(
+            RepoIntegratorState.quota_remaining == 0,
+            "⚠️ Quota Exceeded - Upgrade Required",
+            rx.cond(
+                RepoIntegratorState.selected_repo == None,
+                "🔍 Select a repository first",
+                rx.cond(
+                    RepoIntegratorState.instructions.length() == 0,
+                    "✍️ Add instructions to continue",
+                    "🚀 Analyze with AI"
+                ),
+            ),
+        ),
+        on_click=RepoIntegratorState.analyze_repo,
+        disabled=(RepoIntegratorState.selected_repo == None) | 
+                 (RepoIntegratorState.instructions.length() == 0) | 
+                 (RepoIntegratorState.quota_remaining == 0),
+        style={
+            **BUTTON_PRIMARY_STYLE,
+            "width": "100%",
+            "padding": "16px",
+            "font_size": "16px",
+        },
+        loading=RepoIntegratorState.is_loading,
+    )
 
 
 def input_stage() -> rx.Component:
-
+    """Main input stage"""
     return rx.vstack(
-
-        # Quota indicator
-
-        quota_badge(),
-
-       
-
-        # Model selector
-
-        model_selector(),
-
-       
-
-        # Repo URL
-
-        rx.vstack(
-
-            rx.hstack(
-
-                rx.icon("github", size=16),
-
-                rx.text("link to GitHub repository", font_weight="medium"),
-
-                spacing="2"
-
-            ),
-
-            rx.input(
-
-                placeholder="https://github.com/owner/repo",
-
-                value=State.repo_url,
-
-                on_change=State.set_repo_url,
-
-                width="100%",
-
-                size="3"
-
-            ),
-
-            align="start",
-
-            spacing="2",
-
-            width="100%"
-
-        ),
-
-       
-
-        # Target file
-
-        rx.vstack(
-
-            rx.hstack(
-
-                rx.icon("file-code", size=16),
-
-                rx.text("my target file", font_weight="medium"),
-
-                spacing="2"
-
-            ),
-
-            rx.input(
-
-                placeholder="src/my_compression.py",
-
-                value=State.target_file,
-
-                on_change=State.set_target_file,
-
-                width="100%",
-
-                size="3"
-
-            ),
-
-            align="start",
-
-            spacing="2",
-
-            width="100%"
-
-        ),
-
-       
-
-        # Instructions
-
-        rx.vstack(
-
-            rx.hstack(
-
-                rx.icon("zap", size=16),
-
-                rx.text("my instructions", font_weight="medium"),
-
-                spacing="2"
-
-            ),
-
-            rx.text_area(
-
-                placeholder="for example: 'merge compression algorithm, make it async, add error handling'",
-
-                value=State.instructions,
-
-                on_change=State.set_instructions,
-
-                width="100%",
-
-                rows="4",
-
-                size="3"
-
-            ),
-
-            align="start",
-
-            spacing="2",
-
-            width="100%"
-
-        ),
-
-       
-
-        # Error message
-
+        hero_section(),
+        github_connect_card(),
+        repo_search_input(),
+        instructions_input(),
+        
         rx.cond(
-
-            State.error_message != "",
-
+            RepoIntegratorState.error_message != "",
             rx.callout(
-
-                State.error_message,
-
-                icon="circle_alert",
-
-                color_scheme="red",
-
-                width="100%"
-
-            )
-
-        ),
-
-       
-
-        # Analyze button
-
-        rx.button(
-
-            rx.hstack(
-
-                rx.icon("sparkles", size=16),
-
-                rx.text("analyze with AI"),
-
-                spacing="2"
-
-            ),
-
-            on_click=State.analyze_repo,
-
-            disabled=((State.repo_url == "") | (State.error_message != "") | (State.remaining_quota <= 0)),
-
-            width="100%",
-
-            size="3",
-
-            color_scheme="purple",
-
-            loading=State.is_loading
-
-        ),
-
-       
-
-        # Quota warning
-
-        rx.cond(
-
-            State.remaining_quota <= 3,
-
-            rx.callout(
-
-                "you have few calls remaining this month. consider upgrading to Lightning AI",
-
+                RepoIntegratorState.error_message,
                 icon="triangle_alert",
-
-                color_scheme="orange",
-
-                size="1"
-
-            )
-
+                color_scheme="red",
+            ),
         ),
-
-       
-
-        spacing="5",
-
-        width="100%"
-
+        
+        analyze_button(),
+        
+        # Footer info
+        rx.vstack(
+            rx.text("⚡ Powered by Lightning AI GPU Studio", font_size="14px", color=COLORS["text_muted"]),
+            rx.text("🔒 Your code never leaves your machine • Changes are reviewed before applying", 
+                   font_size="12px", 
+                   color=COLORS["text_muted"],
+                   text_align="center"),
+            spacing="2",
+            align_items="center",
+        ),
+        
+        spacing="8",
+        width="100%",
+        max_width="800px",
+        margin="0 auto",
     )
-
-
-
 
 
 def analyzing_stage() -> rx.Component:
-
+    """Analysis in progress"""
     return rx.vstack(
-
-        rx.icon("loader_circle", size=48, color="purple", class_name="animate-spin"),
-
-        rx.heading(State.current_step, size="6"),
-
-        rx.text("מופעל על GPU של Lightning AI ☁️", color="gray.500", font_size="sm"),
-
-        rx.progress(value=State.progress, width="100%", color_scheme="purple"),
-
-        rx.text(f"{State.progress}%", color="gray.500"),
-
-        spacing="4",
-
-        align="center",
-
-        padding="12"
-
-    )
-
-
-
-
-
-def reviewing_stage() -> rx.Component:
-
-    return rx.vstack(
-
-        rx.callout(
-
-            rx.vstack(
-
-                rx.text("תכנית השינויים", font_weight="bold"),
-
-                rx.text(State.analysis.estimated_changes),
-
-                spacing="1"
-
+        rx.box(
+            rx.box(
+                rx.spinner(size="3", color=COLORS["purple_500"]),
+                background=f"linear-gradient(135deg, {COLORS['purple_600']}20, {COLORS['pink_600']}20)",
+                border_radius="16px",
+                padding="32px",
             ),
-
-            icon="info",
-
-            color_scheme="blue"
-
+            display="flex",
+            justify_content="center",
         ),
-
-       
-
-        rx.vstack(
-
-            rx.heading("affected files:", size="5"),
-
-            rx.foreach(
-
-                State.analysis.affected_files,
-
-                lambda file: file_card(
-
-                    file,
-
-                    State.selected_files.contains(file.path)
-
-                )
-
-            ),
-
-            spacing="3",
-
-            width="100%"
-
-        ),
-
-       
-
-        rx.cond(
-
-            State.analysis.risks.length() > 0,
-
-            rx.callout(
-
-                rx.vstack(
-
-                    rx.text("risks:", font_weight="bold"),
-
-                    rx.foreach(
-
-                        State.analysis.risks,
-
-                        lambda risk: rx.text(f"• {risk}", font_size="sm")
-
-                    ),
-
-                    spacing="2"
-
-                ),
-
-                icon="triangle_alert",
-
-                color_scheme="yellow"
-
-            )
-
-        ),
-
-       
-
-        rx.hstack(
-
-            rx.button(
-
-                "return to input stage",
-
-                on_click=State.reset_form,
-
-                variant="outline",
-
-                color_scheme="gray"
-
-            ),
-
-            rx.button(
-
-                rx.hstack(
-
-                    rx.icon("check", size=16),
-
-                    rx.text(f"apply changes ({State.selected_files.length()} files)"),
-
-                    spacing="2"
-
-                ),
-
-                on_click=State.apply_changes,
-
-                color_scheme="green",
-
-                disabled=State.selected_files.length() == 0,
-
-                loading=State.is_loading
-
-            ),
-
-            spacing="3",
-
-            width="100%",
-
-            justify="end"
-
-        ),
-
-       
-
-        spacing="6",
-
-        width="100%"
-
-    )
-
-
-
-
-
-def applying_stage() -> rx.Component:
-
-    return rx.vstack(
-
-        rx.icon("loader_circle", size=48, color="green", class_name="animate-spin"),
-
-        rx.heading("applying changes...", size="6"),
-
-        rx.text(State.current_step, color="gray.500"),
-
-        rx.progress(value=State.progress, width="100%", color_scheme="green"),
-
-        spacing="4",
-
-        align="center",
-
-        padding="12"
-
-    )
-
-
-
-
-
-def done_stage() -> rx.Component:
-
-    return rx.vstack(
-
-        rx.icon("circle_check", size=64, color="green"),
-
-        rx.heading("done successfully! 🎉", size="7"),
-
-        rx.text(State.success_message, font_size="lg", color="gray.600"),
-
-        quota_badge(),
-
-        rx.button(
-
-            "start new integration",
-
-            on_click=State.reset_form,
-
+        rx.heading(RepoIntegratorState.current_step, size="7", text_align="center"),
+        rx.text("Running AI analysis on GPU in the cloud", color=COLORS["text_secondary"], text_align="center"),
+        rx.progress(
+            value=RepoIntegratorState.progress,
+            width="400px",
+            max=100,
             color_scheme="purple",
-
-            size="3"
-
         ),
-
-        spacing="4",
-
-        align="center",
-
-        padding="12"
-
+        rx.text(f"{RepoIntegratorState.progress}%", color=COLORS["text_muted"]),
+        spacing="6",
+        align_items="center",
+        padding="80px 0",
     )
 
 
-
+def results_stage() -> rx.Component:
+    """Results display"""
+    return rx.vstack(
+        rx.box(
+            rx.text("✓", font_size="48px", color=COLORS["success"]),
+            background=f"{COLORS['success']}20",
+            border_radius="16px",
+            padding="16px",
+        ),
+        rx.heading("Analysis Complete!", size="7"),
+        rx.text(
+            f"Found {RepoIntegratorState.affected_files.length()} files that need changes",
+            color=COLORS["text_secondary"],
+        ),
+        
+        rx.box(
+            rx.vstack(
+                rx.heading("Integration Plan", size="5", margin_bottom="16px"),
+                rx.foreach(
+                    RepoIntegratorState.affected_files,
+                    lambda file, idx: rx.hstack(
+                        rx.box(
+                            str(idx + 1),
+                            background=f"{COLORS['purple_600']}20",
+                            border_radius="8px",
+                            padding="8px 12px",
+                            font_weight="600",
+                            font_size="14px",
+                        ),
+                        rx.vstack(
+                            rx.text(file["path"], font_family="monospace", font_size="14px"),
+                            rx.text(file["reason"], color=COLORS["text_secondary"], font_size="12px"),
+                            spacing="1",
+                            align_items="start",
+                        ),
+                        rx.badge(
+                            f"{file['confidence']}%",
+                            color_scheme="green",
+                        ),
+                        justify="between",
+                        width="100%",
+                        padding="12px",
+                        background=f"{COLORS['bg_secondary']}",
+                        border_radius="8px",
+                    ),
+                ),
+                spacing="3",
+            ),
+            border_radius="16px",
+            padding="24px",
+            background=COLORS["bg_card"],
+            border=f"1px solid {COLORS['border']}",
+            width="100%",
+            max_width="700px",
+        ),
+        
+        rx.button(
+            "Apply Changes",
+            on_click=RepoIntegratorState.reset_form,
+            style={
+                **BUTTON_PRIMARY_STYLE,
+                "width": "300px",
+                "padding": "16px",
+            },
+        ),
+        
+        spacing="6",
+        align_items="center",
+        padding="40px 0",
+    )
 
 
 def index() -> rx.Component:
-
-    return rx.container(
-
-        rx.vstack(
-
-            # Header
-
-            rx.vstack(
-
-                rx.hstack(
-
-                    rx.icon("zap", size=32, color="yellow"),
-
-                    rx.heading("RepoIntegrator", size="9"),
-
-                    rx.badge("Powered by Lightning AI", color_scheme="purple"),
-
-                    spacing="3",
-
-                    align="center"
-
-                ),
-
-                rx.text(
-
-                    "smart integration of GitHub repos into your code with GPU in the cloud",
-
-                    font_size="xl",
-
-                    color="gray.600",
-
-                    text_align="center"
-
-                ),
-
-                spacing="2",
-
-                align="center",
-
-                padding_bottom="6"
-
+    """Main page"""
+    return rx.box(
+        header(),
+        rx.box(
+            rx.match(
+                RepoIntegratorState.stage,
+                ("input", input_stage()),
+                ("analyzing", analyzing_stage()),
+                ("results", results_stage()),
             ),
-
-           
-
-            # Main card
-
-            rx.box(
-
-                rx.match(
-
-                    State.stage,
-
-                    ("input", input_stage()),
-
-                    ("analyzing", analyzing_stage()),
-
-                    ("reviewing", reviewing_stage()),
-
-                    ("applying", applying_stage()),
-
-                    ("done", done_stage()),
-
-                ),
-
-                bg="white",
-
-                border="1px solid",
-
-                border_color="gray.200",
-
-                border_radius="xl",
-
-                padding="8",
-
-                shadow="xl",
-
-                width="100%"
-
-            ),
-
-           
-
-            # Footer #TODO: change to strings file! AND remove in production
-
-            rx.text(
-
-                "💡 Lightning AI provides 20 free calls per month | GPU Studio",
-
-                font_size="sm",
-
-                color="gray.500",
-
-                text_align="center"
-
-            ),
-
-           
-
-            spacing="8",
-
-            align="center",
-
-            padding_y="12"
-
+            padding="32px",
         ),
-
-        max_width="4xl",
-
-        center_content=True
-
+        background=f"linear-gradient(to bottom right, {COLORS['bg_primary']}, {COLORS['bg_secondary']})",
+        min_height="100vh",
+        color=COLORS["text_primary"],
     )
 
 
-
-
-
+# App configuration
 app = rx.App(
-
     theme=rx.theme(
-
         appearance="dark",
-
-        accent_color="purple"
-
-    )
-
+        accent_color="purple",
+        gray_color="slate",
+        radius="large",
+    ),
+    stylesheets=[
+        "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap",
+    ],
+    style={
+        "font_family": "'Inter', sans-serif",
+    }
 )
 
-app.add_page(index, route="/", title="RepoIntegrator | Lightning AI")
-
+app.add_page(index, route="/", title="RepoIntegrator | Smart GitHub Integration")
