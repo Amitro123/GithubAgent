@@ -14,6 +14,9 @@ dependencies = [
   "pydantic",
   "pydantic-settings",
   "ipykernel",
+  "reflex",
+  "gitpython",
+  "httpx",
 ]
 requires-python = ">= 3.10"
 

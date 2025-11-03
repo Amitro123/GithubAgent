@@ -1,89 +1,94 @@
-from contextlib import asynccontextmanager
+# api/main.py
+"""
+FastAPI backend for RepoIntegrator.
+Separates UI concerns from business logic.
 
-from fastapi import FastAPI
-from services.lightning_ai_service import LightningAIClient, LightningModel
-import asyncio
+זה דומה לארכיטקטורה שלך ב-AutoFix
+"""
 
-from .models import ChatRequest, EvalRequest, IngestDocumentsRequest, ResetMemoryRequest
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, HttpUrl
+import logging
+import os
+from typing import Optional
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Handles startup and shutdown events for the API."""
-    # Startup code (if any) goes here
-    yield
-
-
-app = FastAPI(
-    title=" Agent API ",
-    description=" This is a template for creating powerful Agent APIs. ",
-    docs_url="/docs",
-    lifespan=lifespan,
+from repofactor.application.services.repo_integrator_service import (
+    RepoIntegratorService
 )
 
 
-@app.get("/")
-async def root():
-    """
-    Root endpoint that redirects to API documentation
-    """
-    return {"message": "Welcome to Agent API. Visit /docs for documentation"}
+# Setup
+app = FastAPI(title="RepoIntegrator API", version="0.1.0")
+logger = logging.getLogger(__name__)
+
+# Initialize service (singleton)
+repo_service = RepoIntegratorService()
 
 
-@app.post("/chat")
-async def chat(request: ChatRequest):
-    """
-    Uses the Chat Service from application layer
-    """
-    return {"message": "Chat request received"}
+# Request/Response models
+class AnalyzeRepoRequest(BaseModel):
+    repo_url: str
+    target_file: Optional[str] = None
+    instructions: str = ""
+    model: str = "CODE_LLAMA_34B"
 
 
-@app.post("/eval")
-async def eval(request: EvalRequest):
-    """
-    Uses the Chat Service from application layer
-    """
-    return {"message": "Eval request received"}
+class AnalyzeRepoResponse(BaseModel):
+    success: bool
+    data: dict
+    error: Optional[str] = None
+    quota_remaining: int
 
 
-@app.post("/eval")
-async def ingest_documents(request: IngestDocumentsRequest):
+# Endpoints
+@app.post("/api/v1/analyze-repo")
+async def analyze_repo(request: AnalyzeRepoRequest) -> AnalyzeRepoResponse:
     """
-    Uses the Chat Service from application layer
-    """
-    return {"message": "Ingest documents request received"}
-
-
-@app.post("/reset-memory")
-async def reset_memory(request: ResetMemoryRequest):
-    """
-    Uses the Chat Service from application layer
-    """
-    return {"message": "Reset memory request received"}
-
-from services.lightning_ai_service import LightningAIClient, LightningModel
-import asyncio
-
-async def main():
-    client = LightningAIClient()
+    POST /api/v1/analyze-repo
     
-    # analyze code
-    response = await client.generate(
-        prompt="Explain this code:\ndef factorial(n): return 1 if n <= 1 else n * factorial(n-1)",
-        model=LightningModel.CODE_LLAMA_34B,
-        max_tokens=500
-    )
+    Analyze repository and return integration plan.
+    """
     
-    print(response.text)
-    print(f"remaining calls: {client.get_remaining_quota()}")
+    try:
+        logger.info(f"Analyzing repo: {request.repo_url}")
+        
+        result = await repo_service.analyze_repository(
+            repo_url=request.repo_url,
+            target_file=request.target_file,
+            user_instructions=request.instructions
+        )
+        
+        # Get remaining quota
+        quota = repo_service.lightning_client.get_remaining_quota() \
+            if repo_service.lightning_client else -1
+        
+        return AnalyzeRepoResponse(
+            success=True,
+            data={
+                "repo_name": result.repo_name,
+                "affected_files": result.affected_files,
+                "dependencies": result.dependencies,
+                "risks": result.risks,
+                "estimated_time": result.estimated_time,
+                "implementation_steps": result.implementation_steps
+            },
+            quota_remaining=quota
+        )
     
-    await client.close()
+    except Exception as e:
+        logger.error(f"Analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-asyncio.run(main())
 
+@app.get("/api/v1/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "ok"}
 
 
 if __name__ == "__main__":
     import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
