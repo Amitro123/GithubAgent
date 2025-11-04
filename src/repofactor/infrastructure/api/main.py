@@ -2,8 +2,6 @@
 """
 FastAPI backend for RepoIntegrator.
 Separates UI concerns from business logic.
-
-זה דומה לארכיטקטורה שלך ב-AutoFix
 """
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
@@ -24,6 +22,10 @@ logger = logging.getLogger(__name__)
 
 # Initialize service (singleton)
 repo_service = RepoIntegratorService()
+
+@app.get("/")
+def root():
+    return {"status": "API is running!", "endpoints": ["/api/v1/analyze-repo", "/api/v1/health", "..."]}
 
 
 # Request/Response models
@@ -92,3 +94,4 @@ if __name__ == "__main__":
     
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+

@@ -1,0 +1,9 @@
+typer
+fastapi[standard]
+loguru
+pydantic
+pydantic-settings
+ipykernel
+reflex
+gitpython
+httpx
