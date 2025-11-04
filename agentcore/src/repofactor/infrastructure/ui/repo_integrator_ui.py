@@ -6,6 +6,8 @@ Beautiful, professional interface for GitHub repo integration
 
 import reflex as rx
 from typing import Optional, List
+from repofactor.application.services import RepoService
+
 
 # ============================================================================
 # State Management
@@ -19,6 +21,13 @@ class RepoIntegratorState(rx.State):
     selected_repo: Optional[dict] = None
     search_results: List[dict] = []
     is_searching: bool = False
+    
+    @property
+    def repo_service(self):
+        """Lazy-load repo service"""
+        if not hasattr(self, '_repo_service_instance'):
+            self._repo_service_instance = RepoService()
+        return self._repo_service_instance
     
     # User Input
     instructions: str = ""
@@ -53,29 +62,21 @@ class RepoIntegratorState(rx.State):
         else:
             self.search_results = []
     
-    def search_repos(self, query: str):
-        """Search GitHub repos (mock for demo)"""
-        self.is_searching = True
+    async def search_repos(self, query: str):
+        """Search GitHub repos via API"""
+        results = await self.repo_service.search_and_validate(query)
+        self.search_results = results
+
+    async def analyze_repository(self):
+        """Full analysis: clone + analyze"""
+        result = await self.repo_service.analyze_repository_content(
+            self.selected_repo["clone_url"],
+            max_files=10
+        )
         
-        # Mock results - in production, call GitHub API
-        self.search_results = [
-            {
-                "full_name": "microsoft/LLMLingua",
-                "description": "Compress prompts for LLMs with minimal performance loss",
-                "stars": 2100,
-                "language": "Python",
-                "updated": "2 days ago"
-            },
-            {
-                "full_name": "openai/whisper",
-                "description": "Robust Speech Recognition",
-                "stars": 45000,
-                "language": "Python",
-                "updated": "1 week ago"
-            }
-        ]
-        
-        self.is_searching = False
+        if result["success"]:
+            self.analysis_result = result
+            self.stage = "results"
     
     def select_repo(self, repo: dict):
         """Select a repository"""
