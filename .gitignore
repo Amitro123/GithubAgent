@@ -184,3 +184,5 @@ cython_debug/
 # Python bytecode
 __pycache__/
 *.pyc
+
+launch.json
