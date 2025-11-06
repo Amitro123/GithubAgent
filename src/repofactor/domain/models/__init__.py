@@ -1,6 +1,5 @@
 """Domain models for RepoIntegrator."""
 
-from .file_analysis import FileAnalysis
-from .analysis_result import AnalysisResult
+from .integration_models import AnalysisResult
 
-__all__ = ["FileAnalysis", "AnalysisResult"]
+__all__ = ["AnalysisResult"]

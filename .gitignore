@@ -179,3 +179,8 @@ cython_debug/
 .pypirc
 
 .DS_Store
+
+
+# Python bytecode
+__pycache__/
+*.pyc

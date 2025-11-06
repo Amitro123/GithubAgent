@@ -1,77 +1,66 @@
 # services/lightning_ai_service.py
 """
-Integration with Lightning AI for running LLM inference
+Integration with Lightning AI using LitAI SDK
 https://lightning.ai/models
 """
 
 import os
-import httpx
+from dotenv import load_dotenv; load_dotenv()
+
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
 from enum import Enum
 import asyncio
 from tenacity import retry, stop_after_attempt, wait_exponential
-from repofactor.domain.prompts.prompt_agent_analyze import PROMPT_AGENT_ANALYZE, PROMPT_REPO_ANALYSIS
+
+# Import LitAI SDK instead of httpx
+from litai import LLM
+
+from repofactor.domain.prompts.prompt_agent_analyze import (
+    PROMPT_AGENT_ANALYZE,
+    PROMPT_REPO_ANALYSIS
+)
+
 
 class LightningModel(Enum):
     """Available models on Lightning AI"""
-    # Code-focused models
-    CODE_LLAMA_34B = "codellama/CodeLlama-34b-Instruct-hf"
-    DEEPSEEK_CODER_33B = "deepseek-ai/deepseek-coder-33b-instruct"
-    STARCODER2_15B = "bigcode/starcoder2-15b"
-    
-    # General LLMs
-    LLAMA_3_70B = "meta-llama/Meta-Llama-3-70B-Instruct"
-    MIXTRAL_8X7B = "mistralai/Mixtral-8x7B-Instruct-v0.1"
-    QWEN_72B = "Qwen/Qwen2-72B-Instruct"
-    
-    # Specialized
-    PHIND_CODE_LLAMA = "Phind/Phind-CodeLlama-34B-v2"
+    GEMINI_2_5_FLASH = "google/gemini-2.5-flash-lite-preview-06-17"
 
-@dataclass
-class LightningRequest:
-    """Request to Lightning AI Studio"""
-    prompt: str
-    model: str
-    max_tokens: int = 2000
-    temperature: float = 0.1
-    top_p: float = 0.95
-    stream: bool = False
-    
+
 @dataclass
 class LightningResponse:
     """Response from Lightning AI"""
     text: str
     model: str
-    usage: Dict[str, int]
-    finish_reason: str
+    usage: Optional[Dict[str, int]] = None
+    finish_reason: str = "stop"
     metadata: Optional[Dict] = None
 
 
 class LightningAIClient:
     """
-    Client for Lightning AI inference.
+    Client for Lightning AI inference using LitAI SDK.
     Handles authentication, rate limiting, and retries.
     """
     
     def __init__(
         self,
         api_key: Optional[str] = None,
-        studio_url: Optional[str] = None
+        model: Optional[str] = None
     ):
         self.api_key = api_key or os.getenv("LIGHTNING_API_KEY")
-        self.studio_url = studio_url or os.getenv("LIGHTNING_STUDIO_URL")
         
         if not self.api_key:
             raise ValueError("LIGHTNING_API_KEY not found in environment")
         
-        self.client = httpx.AsyncClient(
-            timeout=300.0,
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
-            }
-        )
+        # Set API key in environment for LitAI
+        os.environ["LIGHTNING_API_KEY"] = self.api_key
+        
+        # Default model
+        self.model_name = model or os.getenv("LLM_MODEL", "google/gemini-2.5-flash-lite-preview-06-17")
+        
+        # Initialize LLM with LitAI SDK
+        self.llm = LLM(model=self.model_name)
         
         # Rate limiting (20 calls per month for free tier)
         self.monthly_quota = 20
@@ -84,20 +73,20 @@ class LightningAIClient:
     async def generate(
         self,
         prompt: str,
-        model: LightningModel = LightningModel.CODE_LLAMA_34B,
+        model: Optional[str] = None,
         max_tokens: int = 2000,
         temperature: float = 0.1,
         stream: bool = False
     ) -> LightningResponse:
         """
-        Generate completion using Lightning AI.
+        Generate completion using Lightning AI via LitAI SDK.
         
         Args:
             prompt: Input prompt
-            model: Model to use (from LightningModel enum)
+            model: Model to use (model name or LightningModel enum)
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature
-            stream: Whether to stream response
+            stream: Whether to stream response (not implemented yet)
         
         Returns:
             LightningResponse with generated text
@@ -109,84 +98,77 @@ class LightningAIClient:
                 "Consider upgrading your Lightning AI plan."
             )
         
-        # Build request payload
-        payload = {
-            "model": model.value,
-            "prompt": prompt,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "stream": stream
-        }
+        # Get model name
+        if model:
+            if isinstance(model, LightningModel):
+                use_model = model.value
+            else:
+                use_model = model
+        else:
+            use_model = self.model_name
+        
+        # Switch model if different
+        if use_model != self.llm.model:
+            self.llm = LLM(model=use_model)
         
         try:
-            response = await self.client.post(
-                f"{self.studio_url}/api/v1/generate",
-                json=payload
+            # Use LitAI SDK - runs in executor to avoid blocking
+            loop = asyncio.get_event_loop()
+            response_text = await loop.run_in_executor(
+                None,
+                self.llm.chat,
+                prompt
             )
-            response.raise_for_status()
             
-            result = response.json()
             self.calls_made += 1
             
             return LightningResponse(
-                text=result["choices"][0]["text"],
-                model=model.value,
-                usage=result.get("usage", {}),
-                finish_reason=result["choices"][0].get("finish_reason", "stop"),
-                metadata=result.get("metadata")
+                text=response_text,
+                model=use_model,
+                usage={"total_tokens": len(response_text.split())},  # Approximate
+                finish_reason="stop"
             )
             
-        except httpx.HTTPError as e:
+        except Exception as e:
             raise RuntimeError(f"Lightning AI request failed: {str(e)}")
     
     async def generate_streaming(
         self,
         prompt: str,
-        model: LightningModel = LightningModel.CODE_LLAMA_34B,
+        model: Optional[str] = None,
         max_tokens: int = 2000,
         temperature: float = 0.1
     ):
         """
         Stream response from Lightning AI.
-        Yields chunks as they arrive.
+        
+        Note: Streaming not yet supported by LitAI SDK.
+        Falls back to regular generation and yields the whole response.
         """
         
-        payload = {
-            "model": model.value,
-            "prompt": prompt,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "stream": True
-        }
+        response = await self.generate(
+            prompt=prompt,
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature
+        )
         
-        async with self.client.stream(
-            "POST",
-            f"{self.studio_url}/api/v1/generate",
-            json=payload
-        ) as response:
-            response.raise_for_status()
-            
-            async for line in response.aiter_lines():
-                if line.startswith("data: "):
-                    chunk = line[6:]  # Remove "data: " prefix
-                    if chunk.strip() == "[DONE]":
-                        break
-                    
-                    import json
-                    data = json.loads(chunk)
-                    if "choices" in data:
-                        text = data["choices"][0].get("text", "")
-                        yield text
+        # Simulate streaming by yielding chunks
+        words = response.text.split()
+        chunk_size = 5
         
-        self.calls_made += 1
+        for i in range(0, len(words), chunk_size):
+            chunk = ' '.join(words[i:i + chunk_size]) + ' '
+            yield chunk
+            await asyncio.sleep(0.1)  # Small delay to simulate streaming
     
     def get_remaining_quota(self) -> int:
         """Get remaining API calls for the month"""
         return self.monthly_quota - self.calls_made
     
     async def close(self):
-        """Cleanup"""
-        await self.client.aclose()
+        """Cleanup - LitAI SDK handles this internally"""
+        pass
 
 
 class CodeAnalysisAgent:
@@ -198,7 +180,7 @@ class CodeAnalysisAgent:
     def __init__(
         self,
         lightning_client: Optional[LightningAIClient] = None,
-        preferred_model: LightningModel = LightningModel.CODE_LLAMA_34B
+        preferred_model: LightningModel = LightningModel.GEMINI_2_5_FLASH
     ):
         self.client = lightning_client or LightningAIClient()
         self.model = preferred_model
@@ -230,7 +212,7 @@ class CodeAnalysisAgent:
         
         response = await self.client.generate(
             prompt=prompt,
-            model=self.model,
+            model=self.model.value,
             max_tokens=2000,
             temperature=0.1
         )
@@ -261,8 +243,6 @@ class CodeAnalysisAgent:
     ) -> Dict[str, str]:
         """Select most relevant files for analysis"""
         
-        # Priority: main files, core modules, APIs
-        # TODO: Add more patterns based on project type and move to string constants
         priority_patterns = [
             'main.py', 'app.py', 'core', 'api',
             '__init__.py', 'model', 'agent'
@@ -343,7 +323,7 @@ class CodeAnalysisAgent:
         
         response = await self.client.generate(
             prompt=prompt,
-            model=self.model,
+            model=self.model.value,
             max_tokens=3000,
             temperature=0.1
         )
@@ -371,88 +351,117 @@ class CodeAnalysisAgent:
         await self.client.close()
 
 
-# Integration with Reflex UI
-async def analyze_repo_with_lightning(
-    repo_url: str,
-    target_file: Optional[str],
-    instructions: str,
-    local_project_path: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Main function to call from Reflex State.
-    Uses Lightning AI for analysis.
-    """
+# ============================================================================
+# Testing
+# ============================================================================
+
+async def test_litai_connection():
+    """Test LitAI SDK connection"""
     
-    from services.repo_integrator_service import RepoIntegratorAgent
-    
-    # Step 1: Clone and extract repo content
-    # (Using existing service)
-    integrator = RepoIntegratorAgent()
+    print("="*60)
+    print("🧪 Testing LitAI SDK Connection")
+    print("="*60)
     
     try:
-        repo_info = await integrator._analyze_source_repo(repo_url)
+        client = LightningAIClient()
         
-        # Step 2: Use Lightning AI for intelligent analysis
-        lightning_agent = CodeAnalysisAgent()
+        print(f"✅ Client initialized")
+        print(f"   Model: {client.model_name}")
+        print(f"   Quota: {client.get_remaining_quota()}/20")
         
-        # Get file contents (simplified - in production, load actual files)
-        repo_content = {
-            "main.py": "# Sample content",
-            "core/module.py": "# Sample content"
-        }
-        
-        target_context = None
-        if local_project_path and target_file:
-            target_context = f"Target file: {target_file}\nProject: {local_project_path}"
-        
-        analysis = await lightning_agent.analyze_repository(
-            repo_content=repo_content,
-            target_context=target_context,
-            user_instructions=instructions
-        )
-        
-        # Step 3: Format for UI
-        return {
-            "main_file": target_file or "src/main.py",
-            "affected_files": analysis.get("affected_files", []),
-            "dependencies": analysis.get("dependencies", []),
-            "estimated_changes": " ".join(analysis.get("implementation_steps", [])),
-            "risks": analysis.get("risks", [])
-        }
-    
-    finally:
-        await integrator.close()
-        if 'lightning_agent' in locals():
-            await lightning_agent.close()
-
-
-# Example: Direct usage
-async def main():
-    """Example usage"""
-    
-    client = LightningAIClient()
-    
-    try:
-        # Simple generation
+        # Test generation
+        print("\n📝 Generating test response...")
         response = await client.generate(
-            prompt="Explain how to integrate FastAPI with async SQLAlchemy",
-            model=LightningModel.CODE_LLAMA_34B,
-            max_tokens=500
+            prompt="Say 'Hello from Lightning AI' and nothing else.",
+            max_tokens=50
         )
         
-        print(f"Generated text: {response.text}")
-        print(f"Remaining quota: {client.get_remaining_quota()}")
+        print(f"✅ Response received:")
+        print(f"   {response.text[:100]}")
+        print(f"   Quota remaining: {client.get_remaining_quota()}/20")
         
-        # Streaming example
-        print("\nStreaming response:")
-        async for chunk in client.generate_streaming(
-            prompt="Write a Python function to parse git commits",
-            model=LightningModel.CODE_LLAMA_34B
-        ):
-            print(chunk, end="", flush=True)
-    
-    finally:
         await client.close()
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+async def test_code_analysis():
+    """Test code analysis agent"""
+    
+    print("\n" + "="*60)
+    print("🧪 Testing Code Analysis Agent")
+    print("="*60)
+    
+    try:
+        agent = CodeAnalysisAgent()
+        
+        # Simple test code
+        test_repo = {
+            "main.py": """
+def hello():
+    print("Hello")
+    
+if __name__ == "__main__":
+    hello()
+""",
+            "utils.py": """
+def helper():
+    return "Helper"
+"""
+        }
+        
+        print("📊 Analyzing test repository...")
+        
+        analysis = await agent.analyze_repository(
+            repo_content=test_repo,
+            user_instructions="Add logging to all functions"
+        )
+        
+        print(f"✅ Analysis complete:")
+        print(f"   Affected files: {len(analysis.get('affected_files', []))}")
+        print(f"   Dependencies: {analysis.get('dependencies', [])}")
+        
+        await agent.close()
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+async def main():
+    """Run all tests"""
+    
+    print("\n🚀 Lightning AI Service Tests\n")
+    
+    # Test 1: Connection
+    test1 = await test_litai_connection()
+    
+    # Test 2: Code Analysis (only if test 1 passed)
+    test2 = False
+    if test1:
+        test2 = await test_code_analysis()
+    
+    # Summary
+    print("\n" + "="*60)
+    print("📊 Test Summary")
+    print("="*60)
+    print(f"{'✅' if test1 else '❌'} LitAI Connection")
+    print(f"{'✅' if test2 else '❌'} Code Analysis")
+    
+    if test1 and test2:
+        print("\n✅ All tests passed! Ready to use.")
+    else:
+        print("\n❌ Some tests failed. Check errors above.")
 
 
 if __name__ == "__main__":

@@ -5,8 +5,10 @@ Beautiful, professional interface for GitHub repo integration
 """
 
 import reflex as rx
-from typing import Optional, List
+from typing import Optional, List, Dict
 from repofactor.application.services import RepoService
+from repofactor.domain.models.integration_models import AnalysisResult
+
 
 
 # ============================================================================
@@ -21,12 +23,17 @@ class RepoIntegratorState(rx.State):
     selected_repo: Optional[dict] = None
     search_results: List[dict] = []
     is_searching: bool = False
+    analysis_result_dict: Dict = {}
     
     @property
-    def repo_service(self):
+    def repo_service(self) -> RepoService:
         """Lazy-load repo service"""
         if not hasattr(self, '_repo_service_instance'):
-            self._repo_service_instance = RepoService()
+            try:
+                self._repo_service_instance = RepoService()
+            except Exception as e:
+                self.error_message = f"Failed to initialize repo service: {str(e)}"
+                raise
         return self._repo_service_instance
     
     # User Input
@@ -69,14 +76,10 @@ class RepoIntegratorState(rx.State):
 
     async def analyze_repository(self):
         """Full analysis: clone + analyze"""
-        result = await self.repo_service.analyze_repository_content(
-            self.selected_repo["clone_url"],
-            max_files=10
-        )
-        
-        if result["success"]:
-            self.analysis_result = result
-            self.stage = "results"
+        result: AnalysisResult = await self._integrator.analyze_repository_content
+        self.analysis_result_dict = result.to_dict()
+        self.affected_files = result.affected_files
+        self.stage = "results"
     
     def select_repo(self, repo: dict):
         """Select a repository"""

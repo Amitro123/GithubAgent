@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+
+    {
+      "name": "Python: Module",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "repofactor.application.services.repo_integrator_service",
+      "env": {
+        "PYTHONPATH": "src",
+        "LIGHTNING_API_KEY": "b36cc729-f298-4b77-a294-210029385ddc",
+        "LLM_MODEL": "gemini-2.5-flash-lite",
+        "ANOTHER_KEY": "value"
+      },
+      "console": "integratedTerminal"
+    }
+  ]
+}

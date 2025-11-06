@@ -13,6 +13,8 @@ import asyncio
 from dataclasses import dataclass
 import logging
 
+from repofactor.infrastructure.utils.cleanup_tools import cleanup_folder
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,6 +46,15 @@ class GitOperationsService:
     def __init__(self, cache_dir: Optional[str] = None):
         self.cache_dir = cache_dir or os.getenv("REPO_CACHE_DIR", "./cache/repos")
         os.makedirs(self.cache_dir, exist_ok=True)
+    
+    def cleanup_cache(self, days_old: int = 7) -> List[str]:
+        """Clean old cached repositories"""
+        return cleanup_folder(self.cache_dir, days_old=days_old)
+    
+    def cleanup_temp_files(self) -> List[str]:
+        """Clean temporary files from system temp directory"""
+        temp_dir = tempfile.gettempdir()
+        return cleanup_folder(temp_dir, patterns=[".tmp", ".temp"], days_old=1)
     
     async def clone_repository(
         self,

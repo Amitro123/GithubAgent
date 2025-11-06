@@ -80,7 +80,7 @@ async def test_repo_integrator_service():
     
     try:
         service = RepoIntegratorService(
-            preferred_model=LightningModel.CODE_LLAMA_34B
+            preferred_model=LightningModel.GEMINI_2_5_FLASH
         )
         print("✅ Service created successfully")
         print(f"   Model: {service.model.value}")

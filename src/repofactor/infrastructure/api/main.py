@@ -3,6 +3,8 @@
 FastAPI backend for RepoIntegrator.
 Separates UI concerns from business logic.
 """
+from dotenv import load_dotenv; load_dotenv()
+
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
@@ -33,7 +35,7 @@ class AnalyzeRepoRequest(BaseModel):
     repo_url: str
     target_file: Optional[str] = None
     instructions: str = ""
-    model: str = "CODE_LLAMA_34B"
+    model: str = "GEMINI_2_5_FLASH"
 
 
 class AnalyzeRepoResponse(BaseModel):

@@ -61,7 +61,8 @@ class GitHubAPIService:
                         "per_page": limit
                     },
                     headers=self.headers,
-                    timeout=10.0
+                    timeout=10.0,
+                    follow_redirects=True
                 )
                 
                 response.raise_for_status()
@@ -92,40 +93,91 @@ class GitHubAPIService:
         """Check if repository exists and is accessible"""
         async with httpx.AsyncClient() as client:
             try:
+                url = f"{self.base_url}/repos/{owner}/{repo}"
+                
+                # Try with token first if available
+                if self.token:
+                    response = await client.get(
+                        url,
+                        headers=self.headers,
+                        timeout=5.0,
+                        follow_redirects=True
+                    )
+                    if response.status_code == 200:
+                        return True
+                
+                # Try without token for public repos
+                headers_no_auth = {
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "RepoIntegrator/1.0"
+                }
+                
                 response = await client.get(
-                    f"{self.base_url}/repos/{owner}/{repo}",
-                    headers=self.headers,
-                    timeout=5.0
+                    url,
+                    headers=headers_no_auth,
+                    timeout=5.0,
+                    follow_redirects=True
                 )
+                
                 return response.status_code == 200
-            except:
+                
+            except Exception as e:
+                print(f"validate_repository exception: {e}")
                 return False
     
     async def get_repository_info(self, owner: str, repo: str) -> Optional[Dict]:
         """Get detailed repository information"""
         async with httpx.AsyncClient() as client:
             try:
+                url = f"{self.base_url}/repos/{owner}/{repo}"
+                
+                # Try with token first if available
+                if self.token:
+                    try:
+                        response = await client.get(
+                            url,
+                            headers=self.headers,
+                            timeout=10.0,
+                            follow_redirects=True
+                        )
+                        if response.status_code == 200:
+                            repo_data = response.json()
+                            return self._format_repo_data(repo_data)
+                    except:
+                        pass
+                
+                # Try without token for public repos
+                headers_no_auth = {
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "RepoIntegrator/1.0"
+                }
+                
                 response = await client.get(
-                    f"{self.base_url}/repos/{owner}/{repo}",
-                    headers=self.headers,
-                    timeout=10.0
+                    url,
+                    headers=headers_no_auth,
+                    timeout=10.0,
+                    follow_redirects=True
                 )
                 response.raise_for_status()
                 
                 repo_data = response.json()
+                return self._format_repo_data(repo_data)
                 
-                return {
-                    "full_name": repo_data["full_name"],
-                    "description": repo_data["description"],
-                    "stars": repo_data["stargazers_count"],
-                    "language": repo_data["language"],
-                    "size": repo_data["size"],
-                    "default_branch": repo_data["default_branch"],
-                    "topics": repo_data.get("topics", []),
-                }
-                
-            except:
+            except Exception as e:
+                print(f"get_repository_info exception: {e}")
                 return None
+    
+    def _format_repo_data(self, repo_data: Dict) -> Dict:
+        """Format repository data from GitHub API"""
+        return {
+            "full_name": repo_data["full_name"],
+            "description": repo_data["description"],
+            "stars": repo_data["stargazers_count"],
+            "language": repo_data["language"],
+            "size": repo_data["size"],
+            "default_branch": repo_data["default_branch"],
+            "topics": repo_data.get("topics", []),
+        }
     
     def parse_repo_url(self, url: str) -> tuple[str, str]:
         """Parse owner and repo name from GitHub URL"""

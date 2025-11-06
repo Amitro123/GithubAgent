@@ -6,7 +6,23 @@ This is the 'conductor' that manages the entire flow
 
 import logging
 from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, asdict
+import os
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
+from dotenv import load_dotenv; load_dotenv()
+
+print(f"LIGHTNING_API_KEY: {os.getenv('LIGHTNING_API_KEY')}")
+
+
+
+# Import models from the central location
+from repofactor.domain.models.integration_models import (
+    AnalysisResult,
+    AffectedFile,
+    ChangeType,
+    parse_llm_response_to_analysis,
+    dict_to_affected_file
+)
 
 from repofactor.application.agent_service.agent import AgentCore
 from repofactor.application.services.lightning_ai_service import (
@@ -17,23 +33,6 @@ from repofactor.application.services.lightning_ai_service import (
 from repofactor.application.services.repo_service import RepoService
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class AnalysisResult:
-    """Response from repo analysis"""
-    repo_url: str
-    repo_name: str
-    affected_files: List[Dict[str, Any]]  # [{path, reason, confidence, changes}]
-    dependencies: List[str]
-    risks: List[str]
-    estimated_time: str
-    implementation_steps: List[str]
-    raw_llm_response: Optional[str] = None
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization"""
-        return asdict(self)
 
 
 class RepoIntegratorService:
@@ -55,14 +54,14 @@ class RepoIntegratorService:
         ...     repo_url="https://github.com/user/repo",
         ...     user_instructions="Add async support"
         ... )
-        >>> print(f"Files to modify: {len(result.affected_files)}")
+        >>> print(f"Files to modify: {result.file_count}")
     """
     
     def __init__(
         self,
         repo_service: Optional[RepoService] = None,
         lightning_client: Optional[LightningAIClient] = None,
-        preferred_model: LightningModel = LightningModel.CODE_LLAMA_34B
+        preferred_model: LightningModel = LightningModel.GEMINI_2_5_FLASH
     ):
         # Services
         self.repo_service = repo_service or RepoService()
@@ -136,7 +135,6 @@ class RepoIntegratorService:
                 )
             
             # Step 5: Select most relevant files
-            # TODO: Smart file selection based on target_file and instructions
             relevant_files = self._select_relevant_files(
                 py_files, 
                 target_file, 
@@ -159,26 +157,22 @@ class RepoIntegratorService:
                 preferred_model=self.model
             )
             
+            # Get raw dict response from LLM
             analysis_dict = await analysis_agent.analyze_repository(
                 repo_content=file_contents,
                 target_context=target_file,
                 user_instructions=user_instructions
             )
             
-            # Step 8: Format and return results
-            result = AnalysisResult(
+            # Step 8: Convert to proper AnalysisResult using helper
+            result = parse_llm_response_to_analysis(
+                llm_response=analysis_dict,
                 repo_url=repo_url,
-                repo_name=repo_metadata.name,
-                affected_files=analysis_dict.get("affected_files", []),
-                dependencies=analysis_dict.get("dependencies", []),
-                risks=analysis_dict.get("risks", []),
-                estimated_time=self._estimate_time(analysis_dict),
-                implementation_steps=analysis_dict.get("implementation_steps", []),
-                raw_llm_response=analysis_dict.get("raw_response")
+                repo_name=repo_metadata.name
             )
             
             logger.info(
-                f"Analysis complete: {len(result.affected_files)} files to modify, "
+                f"Analysis complete: {result.file_count} files to modify, "
                 f"{len(result.dependencies)} dependencies"
             )
             
@@ -230,28 +224,6 @@ class RepoIntegratorService:
                     return selected
         
         return selected[:max_files]
-    
-    def _estimate_time(self, analysis: Dict) -> str:
-        """
-        Estimate integration time based on analysis.
-        
-        Simple heuristic for MVP:
-        - 1 file = 5 minutes
-        - Each dependency = +2 minutes
-        """
-        num_files = len(analysis.get("affected_files", []))
-        num_deps = len(analysis.get("dependencies", []))
-        
-        minutes = (num_files * 5) + (num_deps * 2)
-        
-        if minutes < 10:
-            return "5-10 minutes"
-        elif minutes < 30:
-            return "10-30 minutes"
-        elif minutes < 60:
-            return "30-60 minutes"
-        else:
-            return "1+ hours"
     
     async def validate_repository(self, repo_url: str) -> bool:
         """
@@ -311,24 +283,28 @@ async def test_integration():
     try:
         # Test with a small, well-known repo
         result = await service.analyze_repository(
-            repo_url="https://github.com/pydantic/pydantic",
-            user_instructions="Add async support to validators",
-            max_files=5  # Limit for testing
+            repo_url="https://github.com/tiangolo/fastapi",
+            user_instructions="Add rate limiting to API endpoints",
+            max_files=3  # Limit for testing
         )
         
         print("\n✅ Analysis complete!")
         print(f"📦 Repository: {result.repo_name}")
-        print(f"📝 Files to modify: {len(result.affected_files)}")
+        print(f"📝 Files to modify: {result.file_count}")  # Now this works!
         print(f"📦 Dependencies: {', '.join(result.dependencies) or 'None'}")
         print(f"⚠️  Risks: {len(result.risks)}")
         print(f"⏱️  Estimated time: {result.estimated_time}")
         
         if result.affected_files:
             print("\n📋 Affected files:")
-            for file_info in result.affected_files[:3]:  # Show first 3
-                print(f"  • {file_info.get('path', 'unknown')}")
-                print(f"    Reason: {file_info.get('reason', 'N/A')}")
-                print(f"    Confidence: {file_info.get('confidence', 0)}%")
+            for file in result.affected_files[:3]:  # Show first 3
+                print(f"  • {file.path}")
+                print(f"    Reason: {file.reason}")
+                print(f"    Confidence: {file.confidence:.0%}")
+        
+        # Test high confidence files property
+        high_conf = result.high_confidence_files
+        print(f"\n🎯 High confidence files (>80%): {len(high_conf)}")
         
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
@@ -345,8 +321,7 @@ async def quick_validate_test():
     
     test_urls = [
         "https://github.com/microsoft/LLMLingua",
-        "https://github.com/invalid/nonexistent",
-        "not-a-url"
+        "https://github.com/Amitro123/autofix-python-engine",
     ]
     
     for url in test_urls:
