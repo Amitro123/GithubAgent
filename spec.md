@@ -1,2 +1,2 @@
-this file will be updated automatically by the AI workflowgit
+this file will be updated automatically by the AI workflowgit.
 
