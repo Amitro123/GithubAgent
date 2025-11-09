@@ -1,1 +1,10 @@
-Added changelog entry for v0.0.1, indicating README.md update.
+# GithubAgent
+
+This repository contains the GithubAgent project.
+
+## Changelog
+
+- v0.0.1
+  - Updated spec.md
+- v0.0.0
+  - Initial release.
