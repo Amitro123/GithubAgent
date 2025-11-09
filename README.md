@@ -1,1 +1,1 @@
-Added changelog entry for version 0.0.1, mentioning the README.md file change.
+Added a new entry to the changelog for version 0.0.1, indicating the README.md file was updated.
