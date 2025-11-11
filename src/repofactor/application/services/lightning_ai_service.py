@@ -13,7 +13,8 @@ from enum import Enum
 import asyncio
 from tenacity import retry, stop_after_attempt, wait_exponential
 import logging
-from pydantic_ai import Agent
+from repofactor.application.agent_service.analysis_agent import _build_analysis_prompt
+
 
 # Import LitAI SDK instead of httpx
 from litai import LLM
@@ -231,20 +232,6 @@ class CodeAnalysisAgent:
         analysis['raw_response'] = response.text
         
         return analysis
-    
-    def _build_analysis_prompt(
-        self,
-        repo_content: Dict[str, str],
-        target_context: Optional[str],
-        instructions: str
-    ) -> str:
-        """Build optimized prompt for code analysis"""
-        
-        # Limit content to most relevant files
-        relevant_files = self._select_relevant_files(repo_content, limit=5)
-        
-        # Use centralized prompt function
-        return PROMPT_REPO_ANALYSIS(instructions, relevant_files, target_context)
     
     def _select_relevant_files(
         self,
