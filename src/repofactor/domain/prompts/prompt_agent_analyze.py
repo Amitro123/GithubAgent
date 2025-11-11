@@ -24,6 +24,7 @@ Provide the complete modified code. Include:
 MODIFIED CODE:
 ```python"""
 
+
 def PROMPT_REPO_ANALYSIS(instructions: str, relevant_files: dict, target_context: str = None) -> str:
     """Generate prompt for repository analysis with structured JSON output"""
     
@@ -43,24 +44,70 @@ SOURCE REPOSITORY FILES:
     if target_context:
         prompt += f"\nTARGET PROJECT CONTEXT:\n{target_context}\n"
     
+    # ✨ IMPROVED: Much stronger JSON enforcement
     prompt += """
-Provide a structured analysis in JSON format:
+
+CRITICAL INSTRUCTIONS:
+- You MUST respond with ONLY a valid JSON object
+- NO explanations before or after the JSON
+- NO markdown code blocks (no ```json```)
+- NO additional text
+- Your ENTIRE response must be parseable as JSON
+
+REQUIRED JSON STRUCTURE:
 {
-  "main_modules": ["list of key modules"],
-  "dependencies": ["required packages"],
+  "main_modules": ["core module names from source repo"],
+  "dependencies": ["pip package names like 'fastapi', 'pydantic>=2.0'"],
   "affected_files": [
     {
-      "path": "file path",
-      "reason": "why this file needs changes",
+      "path": "relative/path/in/target/project.py",
+      "reason": "clear explanation of why this file needs changes",
       "confidence": 85,
-      "changes": ["specific changes needed"]
+      "changes": ["specific change description 1", "specific change 2"]
     }
   ],
-  "risks": ["potential issues"],
-  "implementation_steps": ["ordered steps"]
+  "risks": ["potential issue 1", "potential issue 2"],
+  "implementation_steps": ["1. First actionable step", "2. Second step"]
 }
 
-Focus on practical, actionable recommendations."""
+EXAMPLE for integrating FastAPI into a project:
+{
+  "main_modules": ["fastapi.routing", "fastapi.applications", "fastapi.params"],
+  "dependencies": ["fastapi>=0.100.0", "pydantic>=2.0", "uvicorn"],
+  "affected_files": [
+    {
+      "path": "src/main.py",
+      "reason": "Need to initialize FastAPI application and define routes",
+      "confidence": 95,
+      "changes": [
+        "Import FastAPI from fastapi",
+        "Create app = FastAPI() instance",
+        "Add @app.get() route decorators",
+        "Add uvicorn.run() in main block"
+      ]
+    },
+    {
+      "path": "src/models.py",
+      "reason": "Define Pydantic models for request/response validation",
+      "confidence": 90,
+      "changes": [
+        "Import BaseModel from pydantic",
+        "Create model classes inheriting from BaseModel"
+      ]
+    }
+  ],
+  "risks": [
+    "Ensure existing code is async-compatible",
+    "Check for port conflicts if running server"
+  ],
+  "implementation_steps": [
+    "1. Install dependencies: pip install fastapi uvicorn pydantic",
+    "2. Modify src/main.py to create FastAPI app instance",
+    "3. Create src/models.py with Pydantic models",
+    "4. Test with: uvicorn src.main:app --reload"
+  ]
+}
+
+NOW ANALYZE THE REPOSITORY AND RESPOND WITH VALID JSON ONLY:"""
     
     return prompt
-

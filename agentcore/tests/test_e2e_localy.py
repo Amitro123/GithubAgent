@@ -56,11 +56,15 @@ async def test_simple_repo():
             max_files=3  # IMPORTANT: Limit files for testing
         )
         
+        # Debug prints
+        print("Raw LLM response:", result)
+        print("Raw LLM str:", str(result))
+        
         print("\n✅ Analysis Complete!")
         print(f"   Files to modify: {result.file_count}")
         print(f"   Dependencies: {len(result.dependencies)}")
         print(f"   Risks: {len(result.risks)}")
-        
+
         # Print details
         print("\n📋 Affected Files:")
         for file in result.affected_files[:3]:

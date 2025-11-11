@@ -4,7 +4,7 @@ Integration with Lightning AI using LitAI SDK
 https://lightning.ai/models
 """
 
-import os
+import os, sys, re
 from dotenv import load_dotenv; load_dotenv()
 
 from typing import Optional, List, Dict, Any
@@ -12,9 +12,13 @@ from dataclasses import dataclass
 from enum import Enum
 import asyncio
 from tenacity import retry, stop_after_attempt, wait_exponential
+import logging
+from pydantic_ai import Agent
 
 # Import LitAI SDK instead of httpx
 from litai import LLM
+
+logger = logging.getLogger(__name__)
 
 from repofactor.domain.prompts.prompt_agent_analyze import (
     PROMPT_AGENT_ANALYZE,
@@ -39,14 +43,15 @@ class LightningResponse:
 
 class LightningAIClient:
     """
-    Client for Lightning AI inference using LitAI SDK.
-    Handles authentication, rate limiting, and retries.
+    Client for Lightning AI inference using LitAI SDK and pydantic-ai Agent.
+    Manages authentication, quota and parsing.
+
     """
     
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: Optional[str] = None
+        model: Optional[str] = "google/gemini-2.5-flash-lite-preview-06-17",
     ):
         self.api_key = api_key or os.getenv("LIGHTNING_API_KEY")
         
@@ -209,6 +214,8 @@ class CodeAnalysisAgent:
             target_context,
             user_instructions
         )
+
+        logger.debug(f"Sending prompt to LLM (first 500 chars):\n{prompt[:500]}")
         
         response = await self.client.generate(
             prompt=prompt,
@@ -216,9 +223,12 @@ class CodeAnalysisAgent:
             max_tokens=2000,
             temperature=0.1
         )
-        
+
+        logger.debug(f"Raw LLM response:\n{response.text}")
         # Parse structured output
         analysis = self._parse_analysis(response.text)
+
+        analysis['raw_response'] = response.text
         
         return analysis
     
@@ -277,29 +287,207 @@ class CodeAnalysisAgent:
         }
     
     def _parse_analysis(self, response_text: str) -> Dict[str, Any]:
-        """Parse LLM response into structured format"""
+        """
+        Parse LLM response into structured format.
+        Handles various response formats robustly.
+        
+        Args:
+            response_text: Raw text from LLM
+            
+        Returns:
+            Dict with structured analysis
+        """
+        
+        # Default structure if parsing fails
+        default_result = {
+            "main_modules": [],
+            "dependencies": [],
+            "affected_files": [],
+            "risks": ["Failed to parse LLM response - please try again"],
+            "implementation_steps": []
+        }
+        
+        if not response_text or not response_text.strip():
+            logger.error("Empty response from LLM")
+            return default_result
         
         import json
         import re
         
-        # Try to extract JSON from response
-        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        # Try 1: Direct JSON parse
+        try:
+            result = json.loads(response_text.strip())
+            logger.info("✅ Successfully parsed JSON directly")
+            return self._validate_and_fill_defaults(result)  # ✨ USE IT HERE
+        except json.JSONDecodeError as e:
+            logger.debug(f"Direct JSON parse failed: {e}")
         
-        if json_match:
+        # Try 2: Extract JSON from markdown code blocks
+        json_block_pattern = r'```(?:json)?\s*(\{.*?\})\s*```'
+        match = re.search(json_block_pattern, response_text, re.DOTALL)
+        if match:
             try:
-                return json.loads(json_match.group())
-            except json.JSONDecodeError:
-                pass
+                result = json.loads(match.group(1))
+                logger.info("✅ Successfully extracted JSON from markdown block")
+                return self._validate_and_fill_defaults(result)  # ✨ USE IT HERE
+            except json.JSONDecodeError as e:
+                logger.debug(f"Markdown block JSON parse failed: {e}")
         
-        # Fallback: basic parsing
-        return {
+        # Try 3: Find JSON object anywhere in text (more robust)
+        json_pattern = r'\{(?:[^{}]|(?:\{(?:[^{}]|(?:\{[^{}]*\}))*\}))*\}'
+        matches = list(re.finditer(json_pattern, response_text, re.DOTALL))
+        
+        # Try from largest to smallest match
+        matches.sort(key=lambda m: len(m.group(0)), reverse=True)
+        
+        for match in matches:
+            try:
+                result = json.loads(match.group(0))
+                # Verify it has expected keys
+                if any(key in result for key in ["main_modules", "dependencies", "affected_files"]):
+                    logger.info("✅ Successfully extracted JSON from text")
+                    return self._validate_and_fill_defaults(result)  # ✨ USE IT HERE
+            except json.JSONDecodeError:
+                continue
+        
+        # Try 4: Extract key-value pairs manually (last resort)
+        logger.warning("All JSON parsing failed, attempting manual extraction")
+        extracted = self._manual_extraction(response_text)
+        if extracted and any(v for v in extracted.values() if v):
+            logger.info("⚠️ Using manual extraction")
+            return self._validate_and_fill_defaults(extracted)  # ✨ USE IT HERE
+        
+        # Complete failure - log the response for debugging
+        logger.error(f"❌ Failed to parse LLM response. First 1000 chars:\n{response_text[:1000]}")
+        return default_result  # ✨ This should also be validated
+
+    def _validate_and_fill_defaults(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Ensure the response has all required fields with correct types.
+        
+        Args:
+            data: Parsed JSON data
+            
+        Returns:
+            Validated dict with all required fields
+        """
+        
+        result = {
+            "main_modules": data.get("main_modules", []),
+            "dependencies": data.get("dependencies", []),
+            "affected_files": [],
+            "risks": data.get("risks", []),
+            "implementation_steps": data.get("implementation_steps", [])
+        }
+        
+        # Ensure all fields are lists
+        for key in ["main_modules", "dependencies", "risks", "implementation_steps"]:
+            if not isinstance(result[key], list):
+                logger.warning(f"Field '{key}' is not a list, converting: {type(result[key])}")
+                result[key] = []
+        
+        # Validate affected_files structure
+        raw_files = data.get("affected_files", [])
+        if not isinstance(raw_files, list):
+            logger.warning(f"affected_files is not a list: {type(raw_files)}")
+            raw_files = []
+        
+        for file_info in raw_files:
+            if isinstance(file_info, dict) and "path" in file_info:
+                # Ensure changes is a list
+                changes = file_info.get("changes", [])
+                if not isinstance(changes, list):
+                    changes = []
+                
+                result["affected_files"].append({
+                    "path": str(file_info.get("path", "")),
+                    "reason": str(file_info.get("reason", "")),
+                    "confidence": int(file_info.get("confidence", 50)),
+                    "changes": changes
+                })
+            else:
+                logger.warning(f"Invalid file_info structure: {file_info}")
+        
+        logger.info(
+            f"✅ Validated result: "
+            f"{len(result['affected_files'])} files, "
+            f"{len(result['dependencies'])} deps, "
+            f"{len(result['risks'])} risks, "
+            f"{len(result['implementation_steps'])} steps"
+        )
+        
+        return result
+    
+    def _manual_extraction(self, text: str) -> Dict[str, Any]:
+        """
+        Last resort: manually extract information from free-form text.
+        
+        Args:
+            text: Raw text response
+            
+        Returns:
+            Best-effort extracted data
+        """
+        
+        import re
+        
+        result = {
             "main_modules": [],
             "dependencies": [],
             "affected_files": [],
             "risks": [],
-            "implementation_steps": [],
-            "raw_response": response_text
+            "implementation_steps": []
         }
+        
+        # Extract dependencies (look for pip packages)
+        dep_patterns = [
+            r'(?:install|pip install|dependency|require|import)\s+([a-zA-Z0-9_-]+(?:>=?[0-9.]+)?)',
+            r'`([a-zA-Z0-9_-]+)`.*(?:package|library|module)',
+        ]
+        
+        for pattern in dep_patterns:
+            deps = re.findall(pattern, text, re.IGNORECASE)
+            result["dependencies"].extend(deps)
+        
+        result["dependencies"] = list(set(result["dependencies"]))  # Remove duplicates
+        
+        # Extract file paths
+        file_patterns = [
+            r'(?:file|path|modify|edit|update|change):\s*`?([a-zA-Z0-9_/.-]+\.py)`?',
+            r'`([a-zA-Z0-9_/.-]+\.py)`',
+        ]
+        
+        for pattern in file_patterns:
+            files = re.findall(pattern, text, re.IGNORECASE)
+            for filepath in set(files):
+                if filepath not in [f["path"] for f in result["affected_files"]]:
+                    result["affected_files"].append({
+                        "path": filepath,
+                        "reason": "Extracted from text (manual parsing)",
+                        "confidence": 30,
+                        "changes": []
+                    })
+        
+        # Extract steps (lines starting with numbers)
+        step_pattern = r'^\s*(\d+[\.)]\s+.+)$'
+        steps = re.findall(step_pattern, text, re.MULTILINE)
+        result["implementation_steps"] = steps[:10]  # Limit to 10 steps
+        
+        # Extract risks (lines with "risk", "warning", "caution")
+        risk_pattern = r'(?:risk|warning|caution|note):\s*(.+?)(?:\n|$)'
+        risks = re.findall(risk_pattern, text, re.IGNORECASE)
+        result["risks"] = risks[:5]  # Limit to 5 risks
+        
+        logger.info(
+            f"⚠️ Manual extraction found: "
+            f"{len(result['dependencies'])} deps, "
+            f"{len(result['affected_files'])} files, "
+            f"{len(result['implementation_steps'])} steps, "
+            f"{len(result['risks'])} risks"
+        )
+        
+        return result
+
     
     async def generate_code_changes(
         self,

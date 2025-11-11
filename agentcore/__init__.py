@@ -8,6 +8,6 @@ load_dotenv()
 
 # Verify they're loaded
 if os.getenv("LIGHTNING_API_KEY"):
-    print("✅ Lightning AI key loaded")
+    print("[OK] Lightning AI key loaded")
 else:
-    print("❌ Lightning AI key missing!")
+    print("[ERROR] Lightning AI key missing!")
