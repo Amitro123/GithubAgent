@@ -1,32 +1,23 @@
-# application/agents/analysis_agent.py
+# src/repofactor/application/agent_service/analysis_agent.py
 """
-Code Analysis Agent - handles all analysis logic using Pydantic AI
+Code Analysis Agent - using Lightning AI directly with TOON format
 """
 
 import logging
 from typing import Dict, Any, Optional, List
-try:
-    from pydantic import BaseModel, Field
-except ImportError:
-    class BaseModel:
-        pass
-    def Field(*args, **kwargs):
-        return None
-try:
-    from pydantic_ai import Agent
-    from pydantic_ai.models import OpenAIModel
-except ImportError:
-    Agent = None
-    OpenAIModel = None
+import json
+import re
 
-from repofactor.domain.prompts.prompt_agent_analyze import PROMPT_REPO_ANALYSIS
+from pydantic import BaseModel, Field
+
+from repofactor.domain.prompts.prompt_agent_analyze import PROMPT_REPO_ANALYSIS_TOON
 from repofactor.application.services.lightning_ai_service import LightningAIClient
 
 logger = logging.getLogger(__name__)
 
 
 # ============================================================================
-# Pydantic Models for Structured Output
+# Pydantic Models (for validation)
 # ============================================================================
 
 class AffectedFileSchema(BaseModel):
@@ -38,27 +29,12 @@ class AffectedFileSchema(BaseModel):
 
 
 class RepositoryAnalysisSchema(BaseModel):
-    """Complete repository analysis output - enforces structure"""
-    main_modules: List[str] = Field(
-        default_factory=list,
-        description="Key modules from source repository"
-    )
-    dependencies: List[str] = Field(
-        default_factory=list,
-        description="Required pip packages (e.g., 'fastapi>=0.100.0')"
-    )
-    affected_files: List[AffectedFileSchema] = Field(
-        default_factory=list,
-        description="Files that need modification"
-    )
-    risks: List[str] = Field(
-        default_factory=list,
-        description="Potential issues or warnings"
-    )
-    implementation_steps: List[str] = Field(
-        default_factory=list,
-        description="Ordered implementation steps"
-    )
+    """Complete repository analysis output"""
+    main_modules: List[str] = Field(default_factory=list)
+    dependencies: List[str] = Field(default_factory=list)
+    affected_files: List[AffectedFileSchema] = Field(default_factory=list)
+    risks: List[str] = Field(default_factory=list)
+    implementation_steps: List[str] = Field(default_factory=list)
 
 
 # ============================================================================
@@ -67,23 +43,20 @@ class RepositoryAnalysisSchema(BaseModel):
 
 class CodeAnalysisAgent:
     """
-    Agent for analyzing repositories and suggesting integration changes.
-    Uses Pydantic AI for structured outputs.
+    Agent using Lightning AI directly with TOON format (30-60% fewer tokens).
+    Robust JSON parsing with comprehensive error handling.
     """
     
     def __init__(
         self,
-        lightning_client: Optional[LightningAIClient] = None,
         model: str = "google/gemini-2.5-flash-lite-preview-06-17"
     ):
-        self.client = lightning_client or LightningAIClient()
+        """Initialize with Lightning AI client."""
+        self.client = LightningAIClient(model=model)
         self.model = model
         
-        # Create Pydantic AI agent with structured output
-        self.agent = Agent(
-            model=OpenAIModel('gpt-4o-mini'),
-            result_type=RepositoryAnalysisSchema,
-        )
+        logger.info(f"✅ CodeAnalysisAgent: Lightning AI with TOON format")
+        logger.info(f"   Model: {model}")
     
     async def analyze_repository(
         self,
@@ -91,99 +64,89 @@ class CodeAnalysisAgent:
         target_context: Optional[str] = None,
         user_instructions: str = ""
     ) -> Dict[str, Any]:
-        """
-        Analyze repository and return structured results.
+        """Analyze repository and return structured results."""
         
-        Args:
-            repo_content: Dict of {filepath: content}
-            target_context: Context about target project
-            user_instructions: User's integration instructions
-        
-        Returns:
-            Dict with structured analysis (matches RepositoryAnalysisSchema)
-        """
-        
-        # Build prompt
-        prompt = self._build_analysis_prompt(
-            repo_content,
-            target_context,
-            user_instructions
+        # Generate TOON-formatted prompt (compact!)
+        prompt = PROMPT_REPO_ANALYSIS_TOON(
+            instructions=user_instructions,
+            relevant_files=repo_content,
+            target_context=target_context
         )
         
-        logger.debug(f"Prompt length: {len(prompt)} chars")
-        logger.debug(f"First 500 chars:\n{prompt[:500]}")
+        # Enhanced logging
+        logger.info(f"📊 Prompt stats:")
+        logger.info(f"   Length: {len(prompt)} chars (~{len(prompt)//4} tokens)")
+        logger.info(f"   Files: {len(repo_content)}")
+        logger.info(f"   Format: TOON (compact, 30-60% fewer tokens)")
+        logger.debug(f"Prompt preview: {prompt[:300]}...")
         
         try:
-            # Option 1: Use Pydantic AI (recommended for structured output)
-            result = await self._analyze_with_pydantic_ai(prompt)
+            # Call Lightning AI
+            logger.info("🔄 Calling Lightning AI...")
             
+            response = await self.client.generate(
+                prompt=prompt,
+                max_tokens=3000,
+                temperature=0.1
+            )
+            
+            # Comprehensive response validation
+            logger.info(f"✅ Response received")
+            logger.info(f"   Type: {type(response)}")
+            logger.info(f"   Text length: {len(response.text) if response.text else 0} chars")
+            
+            if not response.text or not response.text.strip():
+                logger.error("❌ Empty response from Lightning AI!")
+                logger.error(f"   Prompt length: {len(prompt)} chars")
+                logger.error(f"   Files: {len(repo_content)}")
+                
+                # Log first file for debugging
+                if repo_content:
+                    first_file = next(iter(repo_content.keys()))
+                    logger.error(f"   First file: {first_file} ({len(repo_content[first_file])} chars)")
+                
+                raise ValueError("Empty response from Lightning AI - prompt may be too long")
+            
+            logger.debug(f"Response preview: {response.text[:500]}...")
+            
+            # Parse with robust logic
+            parsed = self._parse_llm_response(response.text)
+            
+            # Validate with Pydantic
+            validated = RepositoryAnalysisSchema(**parsed)
+            
+            result = validated.model_dump()
+            
+            # Add raw response for debugging
+            result['raw_llm_response'] = response.text
+            
+            logger.info(
+                f"✅ Analysis complete: {len(result['affected_files'])} files, "
+                f"{len(result['dependencies'])} deps, "
+                f"{len(result['risks'])} risks"
+            )
+            
+            return result
+            
+        except ValueError as e:
+            # Empty response error
+            logger.error(f"Analysis failed: {e}")
+            raise RuntimeError(f"Repository analysis failed: {str(e)}")
+        
         except Exception as e:
-            logger.warning(f"Pydantic AI failed, falling back to manual parsing: {e}")
-            # Option 2: Fallback to direct LLM call + manual parsing
-            result = await self._analyze_with_fallback(prompt)
-        
-        logger.info(
-            f"✅ Analysis complete: "
-            f"{len(result.get('affected_files', []))} files, "
-            f"{len(result.get('dependencies', []))} deps"
-        )
-        
-        return result
-    
-    async def _analyze_with_pydantic_ai(self, prompt: str) -> Dict[str, Any]:
-        """Use Pydantic AI for guaranteed structured output"""
-        
-        # Run agent
-        result = await self.agent.run(prompt)
-        
-        # Convert Pydantic model to dict
-        analysis = result.data.model_dump()
-        
-        logger.info("✅ Pydantic AI returned structured output")
-        
-        return analysis
-    
-    async def _analyze_with_fallback(self, prompt: str) -> Dict[str, Any]:
-        """Fallback: Direct LLM call + robust parsing"""
-        
-        # Call Lightning AI directly
-        response = await self.client.generate(
-            prompt=prompt,
-            model=self.model,
-            max_tokens=2000,
-            temperature=0.1
-        )
-        
-        logger.debug(f"Raw LLM response:\n{response.text[:500]}")
-        
-        # Parse with robust logic
-        parsed = self._parse_llm_response(response.text)
-        
-        # Validate with Pydantic
-        validated = RepositoryAnalysisSchema(**parsed)
-        
-        return validated.model_dump()
-    
-    def _build_analysis_prompt(
-        self,
-        repo_content: Dict[str, str],
-        target_context: Optional[str],
-        instructions: str
-    ) -> str:
-        """Build the analysis prompt"""
-        
-        return PROMPT_REPO_ANALYSIS(instructions, repo_content, target_context)
+            logger.error(f"Analysis failed: {e}", exc_info=True)
+            raise RuntimeError(f"Repository analysis failed: {str(e)}")
     
     def _parse_llm_response(self, response_text: str) -> Dict[str, Any]:
         """
-        Robust parsing of LLM response.
-        Tries multiple strategies to extract structured data.
+        Robust JSON parsing with multiple strategies.
+        
+        Tries:
+        1. Direct JSON parse
+        2. Extract from markdown code blocks
+        3. Find JSON object in text
         """
         
-        import json
-        import re
-        
-        # Default structure
         default = {
             "main_modules": [],
             "dependencies": [],
@@ -202,44 +165,44 @@ class CodeAnalysisAgent:
             logger.info("✅ Parsed JSON directly")
             return self._fill_defaults(result)
         except json.JSONDecodeError:
-            pass
+            logger.debug("Not direct JSON")
         
         # Strategy 2: Extract from markdown code block
-        match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+        match = re.search(r'``````', response_text, re.DOTALL)
         if match:
             try:
                 result = json.loads(match.group(1))
-                logger.info("✅ Extracted JSON from markdown")
+                logger.info("✅ Extracted JSON from markdown block")
                 return self._fill_defaults(result)
             except json.JSONDecodeError:
-                pass
+                logger.debug("Markdown block not valid JSON")
         
-        # Strategy 3: Find JSON anywhere in text
+        # Strategy 3: Find any JSON object in text
         matches = list(re.finditer(
             r'\{(?:[^{}]|(?:\{(?:[^{}]|(?:\{[^{}]*\}))*\}))*\}',
             response_text,
             re.DOTALL
         ))
         
-        # Try largest matches first
+        # Sort by length (longest first) - likely to be the main object
         matches.sort(key=lambda m: len(m.group(0)), reverse=True)
         
         for match in matches:
             try:
                 result = json.loads(match.group(0))
-                if any(k in result for k in ["affected_files", "dependencies"]):
+                # Check if it looks like our expected structure
+                if any(k in result for k in ["affected_files", "dependencies", "main_modules"]):
                     logger.info("✅ Extracted JSON from text")
                     return self._fill_defaults(result)
             except json.JSONDecodeError:
                 continue
         
-        # Strategy 4: Manual extraction (last resort)
-        logger.warning("⚠️ Using manual extraction")
-        extracted = self._manual_extraction(response_text)
-        return self._fill_defaults(extracted)
+        logger.warning("⚠️ Could not parse JSON, returning default structure")
+        logger.warning(f"Response preview: {response_text[:200]}")
+        return default
     
     def _fill_defaults(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Ensure all required fields exist"""
+        """Ensure all required fields exist with proper types"""
         
         result = {
             "main_modules": data.get("main_modules", []),
@@ -249,12 +212,7 @@ class CodeAnalysisAgent:
             "implementation_steps": data.get("implementation_steps", [])
         }
         
-        # Ensure lists
-        for key in ["main_modules", "dependencies", "risks", "implementation_steps"]:
-            if not isinstance(result[key], list):
-                result[key] = []
-        
-        # Validate affected_files
+        # Validate and normalize affected_files
         raw_files = data.get("affected_files", [])
         if isinstance(raw_files, list):
             for file_info in raw_files:
@@ -268,111 +226,6 @@ class CodeAnalysisAgent:
         
         return result
     
-    def _manual_extraction(self, text: str) -> Dict[str, Any]:
-        """Extract data from free-form text (last resort)"""
-        
-        import re
-        
-        result = {
-            "main_modules": [],
-            "dependencies": [],
-            "affected_files": [],
-            "risks": [],
-            "implementation_steps": []
-        }
-        
-        # Extract dependencies
-        deps = re.findall(
-            r'(?:install|pip|require)\s+([a-zA-Z0-9_-]+(?:>=?[0-9.]+)?)',
-            text,
-            re.IGNORECASE
-        )
-        result["dependencies"] = list(set(deps))
-        
-        # Extract file paths
-        files = re.findall(r'([a-zA-Z0-9_/.-]+\.py)', text)
-        for filepath in set(files):
-            result["affected_files"].append({
-                "path": filepath,
-                "reason": "Extracted from text",
-                "confidence": 30,
-                "changes": []
-            })
-        
-        # Extract numbered steps
-        steps = re.findall(r'^\s*\d+[\.)]\s+(.+)$', text, re.MULTILINE)
-        result["implementation_steps"] = steps[:10]
-        
-        logger.info(
-            f"Manual extraction: {len(result['dependencies'])} deps, "
-            f"{len(result['affected_files'])} files"
-        )
-        
-        return result
-    
     async def close(self):
-        """Cleanup"""
+        """Cleanup resources"""
         await self.client.close()
-
-
-# ============================================================================
-# Testing
-# ============================================================================
-
-async def test_analysis_agent():
-    """Test the analysis agent"""
-    
-    print("🧪 Testing CodeAnalysisAgent with Pydantic AI...\n")
-    
-    agent = CodeAnalysisAgent()
-    
-    test_repo = {
-        "main.py": """
-from fastapi import FastAPI
-
-app = FastAPI()
-
-@app.get("/")
-def read_root():
-    return {"Hello": "World"}
-""",
-        "models.py": """
-from pydantic import BaseModel
-
-class Item(BaseModel):
-    name: str
-    price: float
-"""
-    }
-    
-    try:
-        result = await agent.analyze_repository(
-            repo_content=test_repo,
-            user_instructions="Add logging to all endpoints"
-        )
-        
-        print("✅ Analysis complete!\n")
-        print(f"Main modules: {result['main_modules']}")
-        print(f"Dependencies: {result['dependencies']}")
-        print(f"Affected files: {len(result['affected_files'])}")
-        print(f"Risks: {result['risks']}")
-        print(f"Steps: {len(result['implementation_steps'])}")
-        
-        if result['affected_files']:
-            print("\n📋 Files to modify:")
-            for file in result['affected_files']:
-                print(f"  • {file['path']} (confidence: {file['confidence']}%)")
-                print(f"    Reason: {file['reason']}")
-        
-    except Exception as e:
-        print(f"❌ Test failed: {e}")
-        import traceback
-        traceback.print_exc()
-    
-    finally:
-        await agent.close()
-
-
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(test_analysis_agent())

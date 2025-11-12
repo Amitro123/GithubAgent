@@ -8,6 +8,7 @@ import logging
 from typing import Dict, List, Optional, Any
 import os
 import sys
+from typing import Union
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
 try:
     from dotenv import load_dotenv; load_dotenv()
@@ -63,16 +64,18 @@ class RepoIntegratorService:
     def __init__(
         self,
         repo_service: Optional[RepoService] = None,
-        lightning_client: Optional[LightningAIClient] = None,
-        preferred_model: LightningModel = LightningModel.GEMINI_2_5_FLASH
+        model: Union[str, LightningModel] = LightningModel.GEMINI_2_5_FLASH
     ):
         # Services
         self.repo_service = repo_service or RepoService()
-        self.lightning_client = lightning_client
-        self.model = preferred_model
+    # Convert enum to string
+        if isinstance(model, LightningModel):
+            self.model = model.value
+        else:
+            self.model = model
         
-        # Agent core (will be updated with repo path)
         self.agent_core = AgentCore(".")
+
     
     async def analyze_repository(
         self,
@@ -156,7 +159,7 @@ class RepoIntegratorService:
             # Step 7: Analyze with Lightning AI
             logger.info("Analyzing with Lightning AI...")
             analysis_agent = CodeAnalysisAgent(
-                lightning_client=self.lightning_client
+                 model=self.model
             )
             
             # Get raw dict response from LLM
@@ -263,8 +266,7 @@ class RepoIntegratorService:
     
     async def close(self):
         """Cleanup resources"""
-        if self.lightning_client:
-            await self.lightning_client.close()
+        pass
 
 
 # ============================================================================

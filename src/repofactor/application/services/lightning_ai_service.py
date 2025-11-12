@@ -3,15 +3,21 @@
 Integration with Lightning AI using LitAI SDK
 https://lightning.ai/models
 """
-import os, sys, re
+import os
+import sys
+import re
 try:
-    from dotenv import load_dotenv; load_dotenv()
+    from dotenv import load_dotenv
+    load_dotenv()
 except ImportError:
     pass
-from typing import Optional, List, Dict, Any
+
+from typing import Optional, Dict, Any
 from dataclasses import dataclass
 from enum import Enum
 import asyncio
+import logging
+
 try:
     from tenacity import retry, stop_after_attempt, wait_exponential
 except ImportError:
@@ -23,10 +29,8 @@ except ImportError:
         pass
     def wait_exponential(*args, **kwargs):
         pass
-import logging
 
-
-# Import LitAI SDK instead of httpx
+# Import LitAI SDK
 try:
     from litai import LLM
 except ImportError:
@@ -52,9 +56,8 @@ class LightningResponse:
 
 class LightningAIClient:
     """
-    Client for Lightning AI inference using LitAI SDK and pydantic-ai Agent.
+    Client for Lightning AI inference using LitAI SDK.
     Manages authentication, quota and parsing.
-
     """
     
     def __init__(
@@ -100,19 +103,28 @@ class LightningAIClient:
             model: Model to use (model name or LightningModel enum)
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature
-            stream: Whether to stream response (not implemented yet)
+            stream: Whether to stream response
         
         Returns:
             LightningResponse with generated text
+        
+        Raises:
+            RuntimeError: If quota exceeded or request fails
         """
         
+        # ✅ Validate prompt length (before quota check)
+        if len(prompt) > 30000:  # ~7500 tokens
+            logger.warning(f"⚠️  Prompt is very long: {len(prompt)} chars")
+            logger.warning("   Consider truncating files more aggressively")
+        
+        # ✅ Check quota
         if self.calls_made >= self.monthly_quota:
             raise RuntimeError(
                 f"Monthly quota exceeded ({self.monthly_quota} calls). "
                 "Consider upgrading your Lightning AI plan."
             )
         
-        # Get model name
+        # ✅ Determine model to use
         if model:
             if isinstance(model, LightningModel):
                 use_model = model.value
@@ -121,31 +133,82 @@ class LightningAIClient:
         else:
             use_model = self.model_name
         
-        # Switch model if different
+        # ✅ Switch model if different
         if use_model != self.llm.model:
+            logger.info(f"🔄 Switching model to: {use_model}")
             self.llm = LLM(model=use_model)
         
         try:
-            # Use LitAI SDK - runs in executor to avoid blocking
+            # ✅ Call Lightning AI
             loop = asyncio.get_event_loop()
+            
+            logger.info(f"🔄 Calling Lightning AI...")
+            logger.info(f"   Prompt: {len(prompt)} chars (~{len(prompt)//4} tokens)")
+            logger.info(f"   Model: {use_model}")
+            logger.info(f"   Max tokens: {max_tokens}")
+            
             response_text = await loop.run_in_executor(
                 None,
                 self.llm.chat,
                 prompt
             )
             
-            self.calls_made += 1
+            # ✅ Enhanced debugging
+            logger.info(f"✅ Response received")
+            logger.debug(f"   Type: {type(response_text)}")
+            logger.debug(f"   Repr: {repr(response_text)[:200]}")
             
+            # ✅ Handle different response types
+            if response_text is None:
+                logger.error("❌ Lightning AI returned None!")
+                raise RuntimeError("Lightning AI returned None")
+            
+            # If dict, extract text content
+            if isinstance(response_text, dict):
+                logger.debug(f"   Response is dict with keys: {response_text.keys()}")
+                text_content = (
+                    response_text.get('content') or 
+                    response_text.get('text') or 
+                    response_text.get('response') or 
+                    response_text.get('message') or
+                    str(response_text)
+                )
+                response_text = text_content
+            
+            # Convert to string if needed
+            if not isinstance(response_text, str):
+                logger.debug(f"   Converting {type(response_text)} to string")
+                response_text = str(response_text)
+            
+            # ✅ Validate final result
+            if not response_text or not response_text.strip():
+                logger.error("❌ Lightning AI returned empty string!")
+                logger.error(f"   Original response type: {type(response_text)}")
+                raise RuntimeError("Lightning AI returned empty response")
+            
+            logger.info(f"✅ Response validated")
+            logger.info(f"   Length: {len(response_text)} chars")
+            logger.debug(f"   Preview: {response_text[:200]}...")
+            
+            # ✅ Update quota counter
+            self.calls_made += 1
+            logger.info(f"📊 Quota: {self.calls_made}/{self.monthly_quota} calls used")
+            
+            # ✅ Return structured response
             return LightningResponse(
                 text=response_text,
                 model=use_model,
-                usage={"total_tokens": len(response_text.split())},  # Approximate
+                usage={"total_tokens": len(response_text.split()) if response_text else 0},
                 finish_reason="stop"
             )
             
         except Exception as e:
+            logger.error(f"❌ Lightning AI request failed: {e}")
+            logger.error(f"   Prompt length: {len(prompt)} chars")
+            logger.error(f"   Model: {use_model}")
+            logger.error(f"   Exception type: {type(e).__name__}", exc_info=True)
             raise RuntimeError(f"Lightning AI request failed: {str(e)}")
-    
+
     async def generate_streaming(
         self,
         prompt: str,
