@@ -6,7 +6,7 @@ Services layer - all business logic services
 from .github_api_service import GitHubAPIService
 from .git_operations_service import GitOperationsService, RepoMetadata
 from .repo_service import RepoService
-from .lightning_ai_service import LightningAIClient, CodeAnalysisAgent
+from .lightning_ai_service import LightningAIClient
 from .repo_integrator_service import RepoIntegratorService
 
 __all__ = [
@@ -15,6 +15,5 @@ __all__ = [
     "GitOperationsService",
     "RepoMetadata",
     "LightningAIClient",
-    "CodeAnalysisAgent",
     "RepoIntegratorService",
 ]

@@ -1,10 +1,12 @@
 # Add this at the top of your main files or in __init__.py
-
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    def load_dotenv():
+        pass
 import os
 
-# Load environment variables
-load_dotenv()
 
 # Verify they're loaded
 if os.getenv("LIGHTNING_API_KEY"):

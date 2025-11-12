@@ -4,8 +4,11 @@ Quick integration test to verify all services work together
 Run this to test without using full quota
 """
 
-from dotenv import load_dotenv
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 import asyncio
 import sys
@@ -18,9 +21,9 @@ if src_path.exists():
 
 from repofactor.application.services.lightning_ai_service import (
     LightningAIClient,
-    CodeAnalysisAgent,
     LightningModel
 )
+from repofactor.application.agent_service.analysis_agent import CodeAnalysisAgent
 from repofactor.application.services.repo_integrator_service import (
     RepoIntegratorService
 )

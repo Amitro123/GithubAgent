@@ -9,7 +9,10 @@ from typing import Dict, List, Optional, Any
 import os
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
-from dotenv import load_dotenv; load_dotenv()
+try:
+    from dotenv import load_dotenv; load_dotenv()
+except ImportError:
+    pass
 
 print(f"LIGHTNING_API_KEY: {os.getenv('LIGHTNING_API_KEY')}")
 
@@ -25,8 +28,8 @@ from repofactor.domain.models.integration_models import (
 )
 
 from repofactor.application.agent_service.agent import AgentCore
+from repofactor.application.agent_service.analysis_agent import CodeAnalysisAgent
 from repofactor.application.services.lightning_ai_service import (
-    CodeAnalysisAgent,
     LightningAIClient,
     LightningModel
 )
@@ -153,8 +156,7 @@ class RepoIntegratorService:
             # Step 7: Analyze with Lightning AI
             logger.info("Analyzing with Lightning AI...")
             analysis_agent = CodeAnalysisAgent(
-                lightning_client=self.lightning_client,
-                preferred_model=self.model
+                lightning_client=self.lightning_client
             )
             
             # Get raw dict response from LLM

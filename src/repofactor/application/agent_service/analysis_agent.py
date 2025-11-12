@@ -5,9 +5,19 @@ Code Analysis Agent - handles all analysis logic using Pydantic AI
 
 import logging
 from typing import Dict, Any, Optional, List
-from pydantic import BaseModel, Field
-from pydantic_ai import Agent
-from pydantic_ai.models.gemini import GeminiModel
+try:
+    from pydantic import BaseModel, Field
+except ImportError:
+    class BaseModel:
+        pass
+    def Field(*args, **kwargs):
+        return None
+try:
+    from pydantic_ai import Agent
+    from pydantic_ai.models import OpenAIModel
+except ImportError:
+    Agent = None
+    OpenAIModel = None
 
 from repofactor.domain.prompts.prompt_agent_analyze import PROMPT_REPO_ANALYSIS
 from repofactor.application.services.lightning_ai_service import LightningAIClient
@@ -71,34 +81,9 @@ class CodeAnalysisAgent:
         
         # Create Pydantic AI agent with structured output
         self.agent = Agent(
-            model=self._create_model_adapter(),
+            model=OpenAIModel('gpt-4o-mini'),
             result_type=RepositoryAnalysisSchema,
-            system_prompt=self._get_system_prompt()
         )
-    
-    def _create_model_adapter(self):
-        """
-        Create a model adapter for Pydantic AI.
-        Since Lightning AI uses custom SDK, we'll use a wrapper.
-        """
-        # For now, use OpenAI as fallback
-        # TODO: Create custom LightningAI adapter for pydantic-ai
-        return OpenAIModel('gpt-4o-mini')  # or use Lightning via custom adapter
-    
-    def _get_system_prompt(self) -> str:
-        """System prompt for the agent"""
-        return """You are an expert code integration assistant.
-
-Your task is to analyze source code repositories and provide detailed integration recommendations.
-
-Key responsibilities:
-- Identify main modules and their purposes
-- List all required dependencies with versions
-- Determine which files in the target project need modifications
-- Highlight potential risks and compatibility issues
-- Provide clear, actionable implementation steps
-
-Always be specific and practical. Focus on real integration challenges."""
     
     async def analyze_repository(
         self,
@@ -187,53 +172,7 @@ Always be specific and practical. Focus on real integration challenges."""
     ) -> str:
         """Build the analysis prompt"""
         
-        # Select most relevant files (limit to avoid token limits)
-        relevant_files = self._select_relevant_files(repo_content, limit=5)
-        
-        # Use centralized prompt builder
-        return PROMPT_REPO_ANALYSIS(instructions, relevant_files, target_context)
-    
-    def _select_relevant_files(
-        self,
-        repo_content: Dict[str, str],
-        limit: int = 5
-    ) -> Dict[str, str]:
-        """Select most relevant files for analysis"""
-        
-        priority_patterns = [
-            'main.py', 'app.py', '__init__.py',
-            'core', 'api', 'model', 'agent'
-        ]
-        
-        scored_files = []
-        for filepath, content in repo_content.items():
-            score = 0
-            
-            # Score by filename patterns
-            for pattern in priority_patterns:
-                if pattern in filepath.lower():
-                    score += 10
-            
-            # Score by file size (prefer medium-sized)
-            size = len(content)
-            if 500 < size < 5000:
-                score += 5
-            elif size > 10000:
-                score -= 3  # Too large
-            
-            # Penalize test files
-            if 'test' in filepath.lower():
-                score -= 10
-            
-            scored_files.append((score, filepath, content))
-        
-        # Sort and select top files
-        scored_files.sort(reverse=True, key=lambda x: x[0])
-        
-        return {
-            filepath: content
-            for _, filepath, content in scored_files[:limit]
-        }
+        return PROMPT_REPO_ANALYSIS(instructions, repo_content, target_context)
     
     def _parse_llm_response(self, response_text: str) -> Dict[str, Any]:
         """

@@ -12,12 +12,12 @@ from pathlib import Path
 from unittest.mock import Mock, AsyncMock, patch
 
 # Imports (path setup handled by conftest.py)
-from src.repofactor.application.services.git_service import GitHubService
-from src.repofactor.application.services.repo_integrator_service import (
+from repofactor.application.services.git_service import GitHubService
+from repofactor.application.services.repo_integrator_service import (
     RepoIntegratorService,
     AnalysisResult
 )
-from src.repofactor.application.agent_service.agent import AgentCore
+from repofactor.application.agent_service.agent import AgentCore
 
 
 class TestGitService:

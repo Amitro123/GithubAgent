@@ -5,6 +5,7 @@ Summary: Intelligent agent for automatic code refactoring and integration across
 License: MIT
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
+Requires-Dist: python-dotenv
 Requires-Dist: typer
 Requires-Dist: fastapi[standard]
 Requires-Dist: loguru
@@ -13,4 +14,17 @@ Requires-Dist: pydantic-settings
 Requires-Dist: ipykernel
 Requires-Dist: reflex
 Requires-Dist: gitpython
+Requires-Dist: pydantic-ai
 Requires-Dist: httpx
+Requires-Dist: tenacity
+Requires-Dist: litai
+Requires-Dist: pydantic
+
+# GithubAgent
+
+This repository contains the GithubAgent project.
+
+## Changelog
+
+- v0.0.1: Updated spec.md
+- v0.0.0: Initial release, README.md update.

@@ -3,8 +3,10 @@
 GitHub API operations: search, validate, metadata
 Uses GitHub REST API - no local cloning
 """
-
-import httpx
+try:
+    import httpx
+except ImportError:
+    httpx = None
 from typing import List, Dict, Optional
 import os
 from datetime import datetime, timedelta, timezone
