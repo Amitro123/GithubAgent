@@ -13,6 +13,7 @@ except ImportError:
 import asyncio
 import sys
 from pathlib import Path
+import pytest
 
 # Add src to path if needed
 src_path = Path(__file__).parent / 'src'
@@ -106,7 +107,7 @@ async def test_repo_integrator_service():
         traceback.print_exc()
         return False
 
-
+@pytest.mark.skip(reason="Requires manual confirmation and uses API quota")
 async def test_full_flow_with_small_repo():
     """Test 4: Full flow with tiny repo (uses 1 API call)"""
     print("\n" + "="*60)

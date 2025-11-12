@@ -185,4 +185,9 @@ cython_debug/
 __pycache__/
 *.pyc
 
-launch.json
+launch.json*
+.egg-info/
+build/
+dist/
+__pycache__/
+.pyc

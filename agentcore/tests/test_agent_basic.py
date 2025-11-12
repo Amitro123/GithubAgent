@@ -12,7 +12,8 @@ from pathlib import Path
 from unittest.mock import Mock, AsyncMock, patch
 
 # Imports (path setup handled by conftest.py)
-from repofactor.application.services.git_service import GitHubService
+from repofactor.application.services.github_api_service import GitHubAPIService
+from repofactor.application.services.git_operations_service import GitOperationsService
 from repofactor.application.services.repo_integrator_service import (
     RepoIntegratorService,
     AnalysisResult
@@ -25,7 +26,7 @@ class TestGitService:
     
     def test_extract_repo_info(self):
         """Test: URL parsing"""
-        service = GitHubService()
+        service = GitOperationsService()
         
         owner, repo = service._extract_repo_info(
             "https://github.com/pallets/flask"
@@ -36,7 +37,7 @@ class TestGitService:
     
     def test_extract_repo_info_with_git_suffix(self):
         """Test: URL parsing with .git"""
-        service = GitHubService()
+        service = GitOperationsService()
         
         owner, repo = service._extract_repo_info(
             "https://github.com/pallets/flask.git"
@@ -47,7 +48,7 @@ class TestGitService:
     
     def test_list_python_files_mock(self):
         """Test: List Python files from a temp directory"""
-        service = GitHubService()
+        service = GitOperationsService()
         
         # Create temp repo structure
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -98,7 +99,7 @@ class TestRepoIntegratorService:
         """Test: Service initializes correctly"""
         service = RepoIntegratorService()
         
-        assert service.git_service is not None
+        assert service.repo_service is not None
         assert service.agent_core is not None
     
     @pytest.mark.skip(reason="Complex integration test - needs full mock setup")
@@ -188,7 +189,7 @@ def temp_repo_path():
 @pytest.fixture
 def git_service(temp_repo_path):
     """Provide GitService with temp repo"""
-    return GitHubService(cache_dir=os.path.join(temp_repo_path, "cache"))
+    return GitHubAPIService(cache_dir=os.path.join(temp_repo_path, "cache"))
 
 
 # ============ Main test runner ============

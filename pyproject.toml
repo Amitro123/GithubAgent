@@ -67,3 +67,9 @@ where = ["src"]
 
 [tool.uv]
 package = true
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["agentcore/tests"]
+asyncio_mode = "auto"
+
