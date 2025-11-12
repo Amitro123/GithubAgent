@@ -93,8 +93,8 @@ def PROMPT_REPO_ANALYSIS_TOON(
     toon_context = encode_analysis_context_toon(
         files=relevant_files,
         instructions=instructions,
-        target_context=None,  # ✅ Skip target for now
-        max_file_length=200  # ✅ Very short!
+        target_context=None,
+        max_file_length=400
     )
     
     # ✅ SHORTER prompt template

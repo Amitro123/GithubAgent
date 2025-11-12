@@ -83,6 +83,48 @@ class LightningAIClient:
         self.monthly_quota = 20
         self.calls_made = 0
     
+    async def _call_llm(
+        self, prompt: str, model: str, max_tokens: int, temperature: float
+    ) -> LightningResponse:
+        """Helper to call the LLM and handle response."""
+
+        loop = asyncio.get_event_loop()
+        logger.info("🔄 Calling Lightning AI...")
+        logger.info(f"   Prompt: {len(prompt)} chars (~{len(prompt)//4} tokens)")
+        logger.info(f"   Model: {model}")
+
+        response_text = await loop.run_in_executor(None, self.llm.chat, prompt)
+
+        logger.info("✅ Response received")
+        logger.debug(f"   Type: {type(response_text)}")
+
+        if response_text is None:
+            raise RuntimeError("Lightning AI returned None")
+
+        if isinstance(response_text, dict):
+            text_content = (
+                response_text.get('content') or
+                response_text.get('text') or
+                str(response_text)
+            )
+            response_text = text_content
+
+        if not isinstance(response_text, str):
+            response_text = str(response_text)
+
+        if not response_text.strip():
+            raise RuntimeError("Lightning AI returned empty response")
+
+        logger.info(f"✅ Response validated (length: {len(response_text)})")
+        logger.debug(f"   Preview: {response_text[:200]}...")
+
+        return LightningResponse(
+            text=response_text,
+            model=model,
+            usage={"total_tokens": len(response_text.split())},
+            finish_reason="stop"
+        )
+
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=4, max=10)
@@ -93,121 +135,50 @@ class LightningAIClient:
         model: Optional[str] = None,
         max_tokens: int = 2000,
         temperature: float = 0.1,
-        stream: bool = False
+        stream: bool = False,
+        prompt_fallback: Optional[str] = None
     ) -> LightningResponse:
         """
-        Generate completion using Lightning AI via LitAI SDK.
-        
-        Args:
-            prompt: Input prompt
-            model: Model to use (model name or LightningModel enum)
-            max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature
-            stream: Whether to stream response
-        
-        Returns:
-            LightningResponse with generated text
-        
-        Raises:
-            RuntimeError: If quota exceeded or request fails
+        Generate completion with fallback for empty responses.
         """
-        
-        # ✅ Validate prompt length (before quota check)
-        if len(prompt) > 30000:  # ~7500 tokens
-            logger.warning(f"⚠️  Prompt is very long: {len(prompt)} chars")
-            logger.warning("   Consider truncating files more aggressively")
-        
-        # ✅ Check quota
         if self.calls_made >= self.monthly_quota:
-            raise RuntimeError(
-                f"Monthly quota exceeded ({self.monthly_quota} calls). "
-                "Consider upgrading your Lightning AI plan."
-            )
-        
-        # ✅ Determine model to use
-        if model:
-            if isinstance(model, LightningModel):
-                use_model = model.value
-            else:
-                use_model = model
-        else:
-            use_model = self.model_name
-        
-        # ✅ Switch model if different
+            raise RuntimeError(f"Monthly quota exceeded ({self.monthly_quota} calls).")
+
+        use_model = model or self.model_name
         if use_model != self.llm.model:
             logger.info(f"🔄 Switching model to: {use_model}")
             self.llm = LLM(model=use_model)
-        
+
         try:
-            # ✅ Call Lightning AI
-            loop = asyncio.get_event_loop()
-            
-            logger.info(f"🔄 Calling Lightning AI...")
-            logger.info(f"   Prompt: {len(prompt)} chars (~{len(prompt)//4} tokens)")
-            logger.info(f"   Model: {use_model}")
-            logger.info(f"   Max tokens: {max_tokens}")
-            
-            response_text = await loop.run_in_executor(
-                None,
-                self.llm.chat,
-                prompt
-            )
-            
-            # ✅ Enhanced debugging
-            logger.info(f"✅ Response received")
-            logger.debug(f"   Type: {type(response_text)}")
-            logger.debug(f"   Repr: {repr(response_text)[:200]}")
-            
-            # ✅ Handle different response types
-            if response_text is None:
-                logger.error("❌ Lightning AI returned None!")
-                raise RuntimeError("Lightning AI returned None")
-            
-            # If dict, extract text content
-            if isinstance(response_text, dict):
-                logger.debug(f"   Response is dict with keys: {response_text.keys()}")
-                text_content = (
-                    response_text.get('content') or 
-                    response_text.get('text') or 
-                    response_text.get('response') or 
-                    response_text.get('message') or
-                    str(response_text)
-                )
-                response_text = text_content
-            
-            # Convert to string if needed
-            if not isinstance(response_text, str):
-                logger.debug(f"   Converting {type(response_text)} to string")
-                response_text = str(response_text)
-            
-            # ✅ Validate final result
-            if not response_text or not response_text.strip():
-                logger.error("❌ Lightning AI returned empty string!")
-                logger.error(f"   Original response type: {type(response_text)}")
-                raise RuntimeError("Lightning AI returned empty response")
-            
-            logger.info(f"✅ Response validated")
-            logger.info(f"   Length: {len(response_text)} chars")
-            logger.debug(f"   Preview: {response_text[:200]}...")
-            
-            # ✅ Update quota counter
+            # Initial attempt
+            response = await self._call_llm(prompt, use_model, max_tokens, temperature)
             self.calls_made += 1
             logger.info(f"📊 Quota: {self.calls_made}/{self.monthly_quota} calls used")
-            
-            # ✅ Return structured response
-            return LightningResponse(
-                text=response_text,
-                model=use_model,
-                usage={"total_tokens": len(response_text.split()) if response_text else 0},
-                finish_reason="stop"
-            )
-            
+            return response
+
         except Exception as e:
-            logger.error(f"❌ Lightning AI request failed: {e}")
-            logger.error(f"   Prompt length: {len(prompt)} chars")
-            logger.error(f"   Model: {use_model}")
-            logger.error(f"   Exception type: {type(e).__name__}", exc_info=True)
-            raise RuntimeError(f"Lightning AI request failed: {str(e)}")
+            logger.warning(f"Initial LLM call failed: {e}")
+            
+            if prompt_fallback:
+                logger.info("🔄 Retrying with fallback prompt...")
+
+                # Check quota again for fallback
+                if self.calls_made >= self.monthly_quota:
+                    raise RuntimeError(f"Monthly quota exceeded before fallback.")
+
+                try:
+                    # Fallback attempt
+                    response = await self._call_llm(prompt_fallback, use_model, max_tokens, temperature)
+                    self.calls_made += 1
+                    logger.info(f"✅ Fallback call successful!")
+                    logger.info(f"📊 Quota: {self.calls_made}/{self.monthly_quota} calls used")
+                    return response
+                except Exception as fallback_e:
+                    logger.error(f"❌ Fallback call also failed: {fallback_e}", exc_info=True)
+                    raise fallback_e
+            
+            logger.error("❌ No fallback available. Raising original error.", exc_info=True)
+            raise e
 
     async def generate_streaming(
         self,

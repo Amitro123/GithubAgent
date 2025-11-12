@@ -10,7 +10,10 @@ import re
 
 from pydantic import BaseModel, Field
 
-from repofactor.domain.prompts.prompt_agent_analyze import PROMPT_REPO_ANALYSIS_TOON
+from repofactor.domain.prompts.prompt_agent_analyze import (
+    PROMPT_REPO_ANALYSIS_TOON,
+    PROMPT_REPO_ANALYSIS,
+)
 from repofactor.application.services.lightning_ai_service import LightningAIClient
 
 logger = logging.getLogger(__name__)
@@ -67,7 +70,14 @@ class CodeAnalysisAgent:
         """Analyze repository and return structured results."""
         
         # Generate TOON-formatted prompt (compact!)
-        prompt = PROMPT_REPO_ANALYSIS_TOON(
+        prompt_toon = PROMPT_REPO_ANALYSIS_TOON(
+            instructions=user_instructions,
+            relevant_files=repo_content,
+            target_context=target_context
+        )
+
+        # Generate standard JSON prompt as a fallback
+        prompt_json = PROMPT_REPO_ANALYSIS(
             instructions=user_instructions,
             relevant_files=repo_content,
             target_context=target_context
@@ -75,17 +85,18 @@ class CodeAnalysisAgent:
         
         # Enhanced logging
         logger.info(f"📊 Prompt stats:")
-        logger.info(f"   Length: {len(prompt)} chars (~{len(prompt)//4} tokens)")
+        logger.info(f"   Length: {len(prompt_toon)} chars (~{len(prompt_toon)//4} tokens)")
         logger.info(f"   Files: {len(repo_content)}")
         logger.info(f"   Format: TOON (compact, 30-60% fewer tokens)")
-        logger.debug(f"Prompt preview: {prompt[:300]}...")
+        logger.debug(f"Prompt preview: {prompt_toon[:300]}...")
         
         try:
-            # Call Lightning AI
+            # Call Lightning AI with fallback
             logger.info("🔄 Calling Lightning AI...")
             
             response = await self.client.generate(
-                prompt=prompt,
+                prompt=prompt_toon,
+                prompt_fallback=prompt_json,
                 max_tokens=3000,
                 temperature=0.1
             )

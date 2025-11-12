@@ -264,7 +264,7 @@ class ToonEncoder:
             return json.dumps(s)
         
         # Contains special chars
-        special_chars = [':', '"', '\\']
+        special_chars = [':', '"', '\\', '\n', '\r']
         if self.delimiter in s or any(c in s for c in special_chars):
             return json.dumps(s)
         
