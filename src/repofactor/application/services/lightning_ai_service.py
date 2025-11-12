@@ -93,21 +93,73 @@ class LightningAIClient:
         logger.info(f"   Prompt: {len(prompt)} chars (~{len(prompt)//4} tokens)")
         logger.info(f"   Model: {model}")
 
-        response_text = await loop.run_in_executor(None, self.llm.chat, prompt)
+        # Try to pass generation params if supported by the SDK. Fallback to basic call.
+        def _invoke():
+            try:
+                return self.llm.chat(prompt, max_tokens=max_tokens, temperature=temperature)
+            except TypeError:
+                # Older SDKs may not accept these kwargs
+                return self.llm.chat(prompt)
+
+        response_raw = await loop.run_in_executor(None, _invoke)
 
         logger.info("✅ Response received")
-        logger.debug(f"   Type: {type(response_text)}")
+        try:
+            logger.debug(f"   Raw type: {type(response_raw)}")
+            logger.debug(f"   Raw repr: {repr(response_raw)[:500]}")
+        except Exception:
+            pass
 
-        if response_text is None:
+        if response_raw is None:
             raise RuntimeError("Lightning AI returned None")
 
-        if isinstance(response_text, dict):
-            text_content = (
-                response_text.get('content') or
-                response_text.get('text') or
-                str(response_text)
-            )
-            response_text = text_content
+        # Normalize to string from various possible SDK shapes
+        response_text = None
+        try:
+            if isinstance(response_raw, str):
+                response_text = response_raw
+            elif isinstance(response_raw, dict):
+                # Common fields
+                response_text = (
+                    response_raw.get('content') or
+                    response_raw.get('text') or
+                    (response_raw.get('message') or {}).get('content') or
+                    (response_raw.get('choices') or [{}])[0].get('message', {}).get('content') or
+                    (response_raw.get('choices') or [{}])[0].get('text')
+                )
+                if response_text is None:
+                    response_text = str(response_raw)
+            else:
+                # Try common attributes on objects
+                for attr_path in [
+                    'content',
+                    'text',
+                    'output_text',
+                ]:
+                    if hasattr(response_raw, attr_path):
+                        response_text = getattr(response_raw, attr_path)
+                        break
+
+                # Try nested message/choices
+                if response_text is None:
+                    message = getattr(response_raw, 'message', None)
+                    if message is not None and hasattr(message, 'content'):
+                        response_text = getattr(message, 'content')
+                if response_text is None:
+                    choices = getattr(response_raw, 'choices', None)
+                    if choices and len(choices) > 0:
+                        first = choices[0]
+                        msg = getattr(first, 'message', None)
+                        if msg is not None and hasattr(msg, 'content'):
+                            response_text = getattr(msg, 'content')
+                        elif hasattr(first, 'text'):
+                            response_text = getattr(first, 'text')
+
+                if response_text is None:
+                    response_text = str(response_raw)
+        except Exception as parse_err:
+            logger.warning(f"Failed to normalize SDK response: {parse_err}")
+            response_text = str(response_raw)
 
         if not isinstance(response_text, str):
             response_text = str(response_text)

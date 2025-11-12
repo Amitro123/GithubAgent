@@ -108,7 +108,8 @@ class CodeAnalysisAgent:
             
             if not response.text or not response.text.strip():
                 logger.error("❌ Empty response from Lightning AI!")
-                logger.error(f"   Prompt length: {len(prompt)} chars")
+                logger.error(f"   TOON prompt length: {len(prompt_toon)} chars")
+                logger.error(f"   Fallback JSON prompt length: {len(prompt_json)} chars")
                 logger.error(f"   Files: {len(repo_content)}")
                 
                 # Log first file for debugging

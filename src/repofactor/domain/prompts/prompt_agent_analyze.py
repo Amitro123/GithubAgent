@@ -97,20 +97,19 @@ def PROMPT_REPO_ANALYSIS_TOON(
         max_file_length=400
     )
     
-    # ✅ SHORTER prompt template
+    # SHORTER prompt template (softened instructions)
     prompt = f"""Analyze this code repository.
 
 CONTEXT:
 {toon_context}
 
-Respond with ONLY valid JSON (no markdown, no explanations):
+Return a single JSON object following this structure (no code fences):
 {{
   "dependencies": ["package"],
   "affected_files": [{{"path": "file.py", "reason": "why", "confidence": 80, "changes": ["what"]}}],
   "risks": ["risk"],
-  "steps": ["step 1"]
+  "implementation_steps": ["step 1"]
 }}
-
-JSON:"""
+"""
     
     return prompt
