@@ -58,6 +58,10 @@ class AnalysisResult:
     confidence_scores: Dict[str, float] = field(default_factory=dict)
     internal_logs: List[str] = field(default_factory=list)
     raw_llm_response: Optional[str] = None
+
+    # Multi-agent results
+    implementation_result: Optional['ImplementationResult'] = None
+    diff: Optional[str] = None
     
     def to_dict(self) -> Dict:
         """Convert to dict for JSON serialization"""
