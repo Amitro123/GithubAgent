@@ -29,7 +29,7 @@ from repofactor.domain.models.integration_models import (
 )
 
 from repofactor.application.agent_service.agent import AgentCore
-from repofactor.application.agent_service.analysis_agent import CodeAnalysisAgent
+from repofactor.application.agent_service.multi_agent_orchestrator import MultiAgentOrchestrator
 from repofactor.application.services.lightning_ai_service import (
     LightningAIClient,
     LightningModel
@@ -67,6 +67,7 @@ class RepoIntegratorService:
         model: Union[str, LightningModel] = LightningModel.GEMINI_2_5_FLASH
     ):
         # Services
+        self.orchestrator = MultiAgentOrchestrator()
         self.repo_service = repo_service or RepoService()
     # Convert enum to string
         if isinstance(model, LightningModel):
@@ -87,20 +88,6 @@ class RepoIntegratorService:
     ) -> AnalysisResult:
         """
         Main entry point for repository analysis.
-        
-        Args:
-            repo_url: GitHub repository URL
-            target_file: Specific file to modify (optional)
-            user_instructions: User's integration instructions
-            use_cache: Whether to use cached clone
-            max_files: Maximum number of files to analyze
-        
-        Returns:
-            AnalysisResult with all findings
-            
-        Raises:
-            ValueError: If repo_url is invalid
-            RuntimeError: If analysis fails
         """
         
         logger.info(f"Starting analysis for {repo_url}")
@@ -118,7 +105,7 @@ class RepoIntegratorService:
             )
             logger.info(f"Cloned to: {repo_metadata.local_path}")
             
-            # Step 3: Update agent with repo path
+            # Step 3: Update AgentCore with repo path (אם זה דרוש)
             self.agent_core = AgentCore(repo_metadata.local_path)
             
             # Step 4: List Python files
@@ -142,8 +129,8 @@ class RepoIntegratorService:
             
             # Step 5: Select most relevant files
             relevant_files = self._select_relevant_files(
-                py_files, 
-                target_file, 
+                py_files,
+                target_file,
                 max_files
             )
             logger.info(f"Selected {len(relevant_files)} files for analysis")
@@ -156,31 +143,22 @@ class RepoIntegratorService:
             )
             logger.info(f"Read {len(file_contents)} files successfully")
             
-            # Step 7: Analyze with Lightning AI
-            logger.info("Analyzing with Lightning AI...")
-            analysis_agent = CodeAnalysisAgent(
-                 model=self.model
+            # Step 7: Use MultiAgentOrchestrator instead of a single agent
+            orchestrator = MultiAgentOrchestrator()
+            
+            results = await orchestrator.run_full_flow(
+                repo_content_old=file_contents,
+                repo_content_new=file_contents,  # אם יש לך גרסה חדשה, שם אותה כאן
+                instructions=user_instructions
             )
             
-            # Get raw dict response from LLM
-            analysis_dict = await analysis_agent.analyze_repository(
-                repo_content=file_contents,
-                target_context=target_file,
-                user_instructions=user_instructions
-            )
-            
-            # Step 8: Convert to proper AnalysisResult using helper
+            # Step 8: Convert analysis part of results to AnalysisResult
             result = parse_llm_response_to_analysis(
-                llm_response=analysis_dict,
+                llm_response=results["analysis"],
                 repo_url=repo_url,
                 repo_name=repo_metadata.name
             )
-            
-            logger.info(
-                f"Analysis complete: {result.file_count} files to modify, "
-                f"{len(result.dependencies)} dependencies"
-            )
-            
+                        
             return result
         
         except ValueError as e:

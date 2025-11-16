@@ -216,6 +216,29 @@ def create_empty_analysis(repo_url: str, repo_name: str, reason: str = "No analy
     )
 
 
+
+@dataclass
+class ModifiedFile:
+    path: str
+    original_content: str
+    modified_content: str
+    backup_path: Optional[str] = None
+    changes_made: List[str] = field(default_factory=list)
+
+@dataclass
+class Error:
+    message: str
+    file_path: Optional[str] = None
+    line_number: Optional[int] = None
+
+@dataclass
+class ImplementationResult:
+    success: bool
+    modified_files: List[ModifiedFile] = field(default_factory=list)
+    errors: List[Error] = field(default_factory=list)
+    execution_logs: List[str] = field(default_factory=list)
+
+
 # ============================================================================
 # Type Aliases for Backwards Compatibility
 # ============================================================================

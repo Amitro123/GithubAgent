@@ -615,3 +615,59 @@ Brief description of changes
 **Last Updated**: 2024-03-01  
 **Maintainer**: [Your Name]  
 **Status**: 🚧 In Development
+
+
+
+# Specification - GithubAgent v0.1.0
+
+## Overview
+AI-powered repository refactoring tool using Lightning AI.
+
+## Architecture
+
+### Phase 1: Analysis (✅ Complete)
+- Input: Source repo URL + instructions
+- Process: TOON-encoded analysis with Lightning AI
+- Output: AnalysisResult (files, dependencies, risks, steps)
+
+### Phase 2: Modification (🚧 TODO)
+- Input: AnalysisResult + target repo
+- Process: Apply changes with safety checks
+- Output: Modified files + git branch
+
+### Phase 3: Validation (🚧 TODO)
+- Input: Modified files
+- Process: Run tests, linters, imports
+- Output: Test results + confidence score
+
+### Phase 4: Documentation (🚧 TODO)
+- Input: AnalysisResult + changes
+- Process: Generate PR description + docs
+- Output: Markdown documentation
+
+## Data Models
+
+### AnalysisResult
+- affected_files: List[AffectedFile]
+- dependencies: List[str]
+- risks: List[str]
+- implementation_steps: List[str]
+- confidence_scores: Dict[str, float]
+
+### TOON Format
+- Token-efficient encoding (30-60% reduction)
+- Tabular format for arrays
+- Smart quoting rules
+- See: src/repofactor/utils/toon_encoder.py
+
+## API
+
+### RepoIntegratorService
+- validate_repository(url) -> bool
+- get_repository_info(url) -> dict
+- analyze_repository(url, instructions) -> AnalysisResult
+
+## Testing
+- E2E tests: agentcore/tests/test_e2e_localy.py
+- Mock mode: MOCK_LIGHTNING_AI=true
+- Validation tests: Quick checks without API calls
