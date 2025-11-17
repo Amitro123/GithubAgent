@@ -15,6 +15,30 @@ class ChangeType(Enum):
     CREATE = "create"
     DELETE = "delete"
 
+@dataclass
+class OrchestratorState:
+    approval_received: bool = False
+    current_stage: str = "init"
+    retry_count: int = 0
+    last_error_message: Optional[str] = None
+
+@dataclass
+class Solution:
+    source: str
+    url: str
+    title: str
+    description: str
+    code_snippet: Optional[str]
+    confidence: float
+    search_query: str
+
+@dataclass
+class ResearchResult:
+    solutions_found: List[Solution]
+    recommendations: List[str]
+    search_queries_used: List[str]
+    total_sources: int
+
 
 @dataclass
 class AffectedFile:
