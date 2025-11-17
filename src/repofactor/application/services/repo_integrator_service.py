@@ -148,18 +148,21 @@ class RepoIntegratorService:
             
             results = await orchestrator.run_full_flow(
                 repo_content_old=file_contents,
-                repo_content_new=file_contents,  # אם יש לך גרסה חדשה, שם אותה כאן
                 instructions=user_instructions
             )
             
             # Step 8: Convert analysis part of results to AnalysisResult
-            result = parse_llm_response_to_analysis(
+            analysis_result = parse_llm_response_to_analysis(
                 llm_response=results["analysis"],
                 repo_url=repo_url,
                 repo_name=repo_metadata.name
             )
-                        
-            return result
+
+            # Populate the new fields
+            analysis_result.implementation_result = results.get("implementation")
+            analysis_result.diff = results.get("diff")
+
+            return analysis_result
         
         except ValueError as e:
             logger.error(f"Validation error: {e}")
@@ -288,6 +291,11 @@ async def test_integration():
         high_conf = result.high_confidence_files
         print(f"\n🎯 High confidence files (>80%): {len(high_conf)}")
         
+        # Verify new fields
+        assert result.implementation_result is not None
+        assert result.diff is not None
+        print("\n✅ Implementation and diff results are present.")
+
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
         raise
