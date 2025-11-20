@@ -1,0 +1,14 @@
+# Core dependencies
+flask==3.0.0
+requests==2.31.0
+python-dotenv==1.0.0
+
+# LLM providers (install one or both)
+openai==1.12.0
+anthropic==0.18.1
+
+# Optional: Production server
+gunicorn==21.2.0
+
+# Optional: Logging and monitoring
+python-json-logger==2.0.7
