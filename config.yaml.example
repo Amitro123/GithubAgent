@@ -1,0 +1,370 @@
+# ============================================================================
+# Multi-Repository Configuration for GitHub Automation Agent
+# ============================================================================
+# This file defines repository-specific settings for the automation agent.
+# The agent can monitor multiple repositories with different configurations.
+#
+# Usage:
+#   1. Copy this file to config.yaml
+#   2. Update repository settings for your projects
+#   3. Set environment variables for sensitive data (tokens, secrets)
+#
+# Environment Variable Overrides:
+#   - REPO_<REPO_NAME>_MIN_COVERAGE: Override min_coverage for specific repo
+#   - REPO_<REPO_NAME>_TEST_FRAMEWORK: Override test_framework
+#   - REPO_<REPO_NAME>_GENERATE_TESTS: Override generate_tests (true/false)
+#
+# Example: REPO_MYPROJECT1_MIN_COVERAGE=85
+# ============================================================================
+
+# Global default settings (applied when repository-specific settings are missing)
+defaults:
+  min_coverage: 80
+  test_framework: "auto-detect"  # Options: auto-detect, pytest, unittest
+  test_directory: "tests"
+  generate_tests: true
+  language: "python"
+  create_test_pr: true
+  auto_commit: false
+  post_review_as_issue: false
+  
+  # Test generation settings
+  test_generation:
+    match_existing_style: true
+    analyze_existing_tests: true
+    use_project_fixtures: true
+    respect_test_organization: true
+    max_tests_per_function: 3
+    include_edge_cases: true
+    include_error_cases: true
+  
+  # Coverage settings
+  coverage:
+    fail_under: 80
+    show_missing: true
+    skip_covered: false
+    report_format: "term-missing"  # Options: term, term-missing, html, xml, json
+    
+  # Code review settings
+  code_review:
+    enabled: true
+    post_as_comment: true
+    create_issue_on_critical: false
+    
+  # Documentation settings
+  documentation:
+    update_readme: true
+    update_spec: true
+    auto_generate_api_docs: false
+
+# ============================================================================
+# Repository-Specific Configurations
+# ============================================================================
+# Each repository can have custom settings that override the defaults.
+# Required fields: name, repo
+# Optional fields: All others (will use defaults if not specified)
+# ============================================================================
+
+repositories:
+  # ---------------------------------------------------------------------------
+  # Example 1: Flask Web Application
+  # ---------------------------------------------------------------------------
+  # Typical Flask project with standard structure and pytest
+  - name: "FlaskWebApp"
+    repo: "username/flask-web-app"  # Format: owner/repository
+    description: "Flask web application with REST API"
+    
+    # Test configuration
+    min_coverage: 85
+    test_framework: "pytest"
+    test_directory: "tests"
+    generate_tests: true
+    language: "python"
+    
+    # Project structure hints (optional - will be auto-detected)
+    project_structure:
+      source_directories: ["app", "api"]
+      test_patterns: ["test_*.py", "*_test.py"]
+      ignore_patterns: ["migrations/", "venv/", "__pycache__/"]
+    
+    # Test generation preferences
+    test_generation:
+      match_existing_style: true
+      analyze_existing_tests: true
+      use_project_fixtures: true
+      prefer_parametrize: true  # pytest-specific
+      include_integration_tests: true
+      mock_external_services: true
+    
+    # Coverage settings
+    coverage:
+      fail_under: 85
+      omit_patterns: ["*/tests/*", "*/migrations/*", "config.py"]
+      
+    # Automation settings
+    create_test_pr: true
+    auto_commit: false
+    post_review_as_issue: false
+    
+    # Custom patterns (optional)
+    custom_patterns:
+      import_style: "absolute"  # or "relative"
+      assertion_style: "pytest"  # pytest, unittest, or auto
+      fixture_location: "conftest.py"
+
+  # ---------------------------------------------------------------------------
+  # Example 2: FastAPI Microservice
+  # ---------------------------------------------------------------------------
+  # FastAPI project with async code and Pydantic models
+  - name: "FastAPIMicroservice"
+    repo: "username/fastapi-service"
+    description: "FastAPI microservice with async operations"
+    
+    min_coverage: 90
+    test_framework: "pytest"
+    test_directory: "tests"
+    generate_tests: true
+    language: "python"
+    
+    project_structure:
+      source_directories: ["src", "app"]
+      test_patterns: ["test_*.py"]
+      ignore_patterns: ["alembic/", ".venv/"]
+    
+    test_generation:
+      match_existing_style: true
+      analyze_existing_tests: true
+      support_async_tests: true  # FastAPI-specific
+      test_api_endpoints: true
+      mock_database: true
+      use_test_client: true
+      
+    coverage:
+      fail_under: 90
+      omit_patterns: ["*/tests/*", "*/alembic/*"]
+      
+    create_test_pr: true
+    auto_commit: false
+
+  # ---------------------------------------------------------------------------
+  # Example 3: Django Web Application
+  # ---------------------------------------------------------------------------
+  # Django project with apps and standard Django test structure
+  - name: "DjangoWebsite"
+    repo: "username/django-website"
+    description: "Django web application with multiple apps"
+    
+    min_coverage: 75
+    test_framework: "unittest"  # Django uses unittest by default
+    test_directory: "tests"  # Django also supports per-app tests
+    generate_tests: true
+    language: "python"
+    
+    project_structure:
+      source_directories: ["apps", "core"]
+      test_patterns: ["test*.py"]  # Django convention
+      ignore_patterns: ["migrations/", "static/", "media/"]
+    
+    test_generation:
+      match_existing_style: true
+      use_django_test_case: true  # Django-specific
+      test_models: true
+      test_views: true
+      test_forms: true
+      mock_database: false  # Django uses test database
+      use_fixtures: true
+      
+    coverage:
+      fail_under: 75
+      omit_patterns: ["*/migrations/*", "*/tests/*", "manage.py"]
+      
+    create_test_pr: true
+    auto_commit: false
+    
+    custom_patterns:
+      test_runner: "django"
+      fixture_format: "json"  # Django fixtures
+
+  # ---------------------------------------------------------------------------
+  # Example 4: CLI Tool / Library
+  # ---------------------------------------------------------------------------
+  # Command-line tool or Python library with simple structure
+  - name: "CLITool"
+    repo: "username/cli-tool"
+    description: "Command-line utility tool"
+    
+    min_coverage: 70
+    test_framework: "auto-detect"
+    test_directory: "tests"
+    generate_tests: true
+    language: "python"
+    
+    project_structure:
+      source_directories: ["src", "cli"]
+      test_patterns: ["test_*.py"]
+      ignore_patterns: ["build/", "dist/", "*.egg-info/"]
+    
+    test_generation:
+      match_existing_style: true
+      test_cli_commands: true
+      mock_file_system: true
+      test_output_formatting: true
+      
+    coverage:
+      fail_under: 70
+      
+    create_test_pr: true
+    auto_commit: false
+
+  # ---------------------------------------------------------------------------
+  # Example 5: Data Science / ML Project
+  # ---------------------------------------------------------------------------
+  # Data science project with notebooks and model code
+  - name: "MLProject"
+    repo: "username/ml-project"
+    description: "Machine learning project with models and pipelines"
+    
+    min_coverage: 65
+    test_framework: "pytest"
+    test_directory: "tests"
+    generate_tests: true
+    language: "python"
+    
+    project_structure:
+      source_directories: ["src", "models", "pipelines"]
+      test_patterns: ["test_*.py"]
+      ignore_patterns: ["notebooks/", "data/", "models/saved/", ".ipynb_checkpoints/"]
+    
+    test_generation:
+      match_existing_style: true
+      test_data_pipelines: true
+      test_model_training: false  # Usually too slow
+      test_preprocessing: true
+      mock_large_datasets: true
+      
+    coverage:
+      fail_under: 65
+      omit_patterns: ["*/notebooks/*", "*/data/*", "*/tests/*"]
+      
+    create_test_pr: true
+    auto_commit: false
+
+  # ---------------------------------------------------------------------------
+  # Example 6: Monorepo with Multiple Projects
+  # ---------------------------------------------------------------------------
+  # Monorepo containing multiple Python packages
+  - name: "MonorepoProject"
+    repo: "username/monorepo"
+    description: "Monorepo with multiple Python packages"
+    
+    min_coverage: 80
+    test_framework: "pytest"
+    test_directory: "tests"
+    generate_tests: true
+    language: "python"
+    
+    project_structure:
+      source_directories: ["packages/", "services/"]
+      test_patterns: ["test_*.py"]
+      ignore_patterns: ["node_modules/", ".venv/"]
+      is_monorepo: true
+    
+    test_generation:
+      match_existing_style: true
+      analyze_existing_tests: true
+      respect_package_boundaries: true
+      
+    coverage:
+      fail_under: 80
+      per_package_coverage: true
+      
+    create_test_pr: true
+    auto_commit: false
+
+  # ---------------------------------------------------------------------------
+  # Example 7: Minimal Configuration (Uses All Defaults)
+  # ---------------------------------------------------------------------------
+  # Simplest configuration - everything else uses defaults
+  - name: "SimpleProject"
+    repo: "username/simple-project"
+    description: "Simple project using all default settings"
+    # All other settings will use defaults from the 'defaults' section
+
+  # ---------------------------------------------------------------------------
+  # Example 8: GitHub Automation Agent (Self-Monitoring)
+  # ---------------------------------------------------------------------------
+  # The agent can monitor itself!
+  - name: "GithubAgent"
+    repo: "Amitro123/GithubAgent"
+    description: "GitHub automation agent - self-monitoring"
+    
+    min_coverage: 85
+    test_framework: "pytest"
+    test_directory: "tests"
+    generate_tests: true
+    language: "python"
+    
+    project_structure:
+      source_directories: ["src/repofactor", "agentcore"]
+      test_patterns: ["test_*.py"]
+      ignore_patterns: ["venv/", ".venv/", "*.egg-info/"]
+    
+    test_generation:
+      match_existing_style: true
+      analyze_existing_tests: true
+      test_webhook_handlers: true
+      mock_github_api: true
+      
+    coverage:
+      fail_under: 85
+      omit_patterns: ["*/tests/*", "*/venv/*"]
+      
+    create_test_pr: true
+    auto_commit: false
+
+# ============================================================================
+# Advanced Configuration Options
+# ============================================================================
+
+# Webhook configuration (global)
+webhook:
+  verify_signature: true
+  secret_env_var: "WEBHOOK_SECRET"
+  supported_events: ["push", "pull_request"]
+  
+# GitHub API configuration (global)
+github:
+  token_env_var: "GITHUB_TOKEN"
+  api_base_url: "https://api.github.com"
+  max_retries: 3
+  retry_delay: 1
+  
+# LLM configuration (global)
+llm:
+  provider_env_var: "LLM_PROVIDER"  # openai or anthropic
+  api_key_env_var: "OPENAI_API_KEY"  # or ANTHROPIC_API_KEY
+  model: "gpt-4"  # or claude-3-opus-20240229
+  max_tokens: 4000
+  temperature: 0.7
+  
+# Logging configuration (global)
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "agent.log"
+  
+# Feature flags (global)
+features:
+  enable_code_review: true
+  enable_readme_update: true
+  enable_spec_update: true
+  enable_test_generation: true
+  enable_coverage_analysis: true
+  enable_auto_merge: false  # Dangerous - use with caution
+  
+# Notification settings (global - future feature)
+notifications:
+  slack_webhook_url_env_var: "SLACK_WEBHOOK_URL"
+  email_notifications: false
+  notify_on_low_coverage: true
+  notify_on_test_failures: true
