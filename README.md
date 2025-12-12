@@ -1,5 +1,8 @@
 # GithubAgent - Repo Refactor AI Agent
 
+
+![Architecture](assets/architecture_diagram.png)
+
 AI-powered repository refactoring and integration tool using Lightning AI and Gemini.
 
 ## Overview
